@@ -29,6 +29,7 @@ def recommend_products(total_score: int, products: list[Product]) -> list[Recomm
             interest_rate=p.interest_rate,
             eligible=eligible,
             reason=reason,
+            min_score_required=p.min_score_required,
         ))
 
     # Sort: eligible first (by lowest interest), then ineligible

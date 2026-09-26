@@ -1,0 +1,41 @@
+{
+  "user_id": "U1002",
+  "total_score": 535,
+  "risk_category": "Fair",
+  "breakdown": {
+    "employment_stability": 150,
+    "housing_status": 80,
+    "digital_footprint": 45,
+    "education": 20,
+    "spend_to_income": 0,
+    "expense_diversity": 20,
+    "cashflow_volatility": 0,
+    "savings": 0,
+    "on_time_payment": 50,
+    "debt_to_income": 120,
+    "credit_utilization": 100,
+    "delinquency": 0,
+    "bonus": 0,
+    "penalty": -50
+  },
+  "features": {
+    "user_id": "U1002",
+    "months_employed": 53,
+    "housing_status": "own",
+    "housing_months": 43,
+    "digital_bill_ontime_pct": 82.4,
+    "education_level": "high_school",
+    "spend_to_income_ratio": 0.96,
+    "essential_spend_pct": 41.3,
+    "cashflow_volatility_pct": 33.4,
+    "savings_days": 7,
+    "on_time_payment_pct": 82.4,
+    "debt_to_income_ratio": 0.03,
+    "credit_utilization_pct": 0.0,
+    "delinquency_flags": [
+      "multiple_late"
+    ],
+    "positive_habits_count": 0,
+    "risk_flags_count": 3
+  }
+}

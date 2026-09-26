@@ -16,13 +16,20 @@ const MAX_POINTS = {
   'Risk flags detected': 50,
 }
 
+function describe(factor, maxPts) {
+  const pts = factor.points
+  if (pts < 0) return `costs you ${Math.abs(pts)} points`
+  if (pts === 0) return 'no points earned'
+  const ratio = pts / maxPts
+  const level = ratio >= 0.8 ? 'a strength' : ratio >= 0.5 ? 'solid' : 'room to improve'
+  return `${pts} of ${maxPts} possible points (${level})`
+}
+
 export default function FactorBreakdown({ explanation }) {
   const { factors } = explanation
 
-  // Show top 10 factors, skip zeros
+  // Show every factor (including zero-point ones) so the explanation is complete
   const visibleFactors = factors
-    .filter(f => f.points !== 0)
-    .slice(0, 10)
 
   return (
     <div className="factors-list">
@@ -37,7 +44,10 @@ export default function FactorBreakdown({ explanation }) {
               {isPositive ? '↑' : '↓'}
             </div>
             <div className="factor-info">
-              <div className="factor-label">{factor.label}</div>
+              <div className="factor-label">
+                {factor.label}
+                <span className="factor-detail"> � {describe(factor, maxPts)}</span>
+              </div>
               <div className="factor-bar">
                 <div
                   className={`factor-bar-fill ${isPositive ? 'positive' : 'negative'}`}

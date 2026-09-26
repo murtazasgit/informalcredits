@@ -47,6 +47,20 @@ MAX_POINTS = {
 }
 
 
+def _factor_text(key: str, label: str, points: int) -> str:
+    """One natural-language line per factor, e.g. 'Savings buffer +50 pts (of 80 possible)'."""
+    sign = "+" if points >= 0 else "-"
+    line = f"{label} {sign}{abs(points)} pts"
+    max_pts = MAX_POINTS.get(key, 0)
+    if max_pts:
+        ratio = points / max_pts
+        verdict = "strong" if ratio >= 0.75 else "moderate" if ratio >= 0.4 else "needs improvement"
+        line += f" (of {max_pts} possible, {verdict})"
+    elif points < 0:
+        line += " (risk penalty)"
+    return line
+
+
 def explain_breakdown(breakdown: ScoreBreakdown, user_id: str = "") -> ExplainResult:
     """
     Convert a ScoreBreakdown into a list of Factor objects sorted by impact,
@@ -58,7 +72,8 @@ def explain_breakdown(breakdown: ScoreBreakdown, user_id: str = "") -> ExplainRe
     for key, points in breakdown_dict.items():
         label = LABELS.get(key, key.replace("_", " ").title())
         direction = "positive" if points >= 0 else "negative"
-        factors.append(Factor(label=label, points=points, direction=direction))
+        factors.append(Factor(label=label, points=points, direction=direction,
+                              text=_factor_text(key, label, points)))
 
     # Sort by absolute impact (most impactful first)
     factors.sort(key=lambda f: abs(f.points), reverse=True)

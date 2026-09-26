@@ -130,6 +130,7 @@ class Factor(BaseModel):
     label: str
     points: int
     direction: Literal["positive", "negative"]
+    text: str = ""   # natural-language line, e.g. "Utility & bill payment consistency: +45 pts (out of 70)"
 
 
 class ExplainResult(BaseModel):
@@ -146,7 +147,7 @@ class Recommendation(BaseModel):
     interest_rate: float
     eligible: bool
     reason: str            # e.g. "Score 742 meets minimum 650 for Starter Card"
-
+    min_score_required: int = 0   # needed by the frontend to call /target-achievement
 
 # ---------- 6. What-If simulator (scoring_engine/ → api/, frontend) ----------
 
@@ -180,3 +181,26 @@ class OfferRequest(BaseModel):
 class OfferResult(BaseModel):
     offer_id: int
     status: Literal["pushed", "accepted", "rejected"]
+
+
+class PushOffersRequest(BaseModel):
+    """Lender pushes one product to one or more candidates, named by user_id (or candidate_ref)."""
+    user_ids: list[str] = Field(default_factory=list)
+    candidate_refs: list[str] = Field(default_factory=list)   # alternative to user_ids
+    product_id: str
+    message: str = ""
+
+
+class LenderLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# ---------- 8. Bank partner API (api/ -> bank-partner-api/) ----------
+
+class PreapproveRequest(BaseModel):
+    """Consumer app -> /offers/preapprove. Give a dataset `user_id` OR the `features` from a
+    scored CSV result (the score is always recomputed server-side, never trusted from the client)."""
+    product_id: str
+    user_id: Optional[str] = None
+    features: Optional[dict] = None

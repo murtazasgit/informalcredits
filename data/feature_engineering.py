@@ -27,51 +27,63 @@ def load_demographics(path: str) -> list[dict]:
 
 
 def load_transactions(path: str) -> list[dict]:
-    """Load transactions CSV file — handles both synthetic and real formats."""
-    transactions = []
-    with open(path, "r") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            row["amount"] = float(row["amount"])
+    """Load transactions from a CSV or JSON (list of objects) file — handles both synthetic
+    and real formats."""
+    with open(path, "r", encoding="utf-8-sig") as f:
+        if path.lower().endswith(".json"):
+            data = json.load(f)
+            rows = data["transactions"] if isinstance(data, dict) else data
+        else:
+            rows = list(csv.DictReader(f))
+    return normalize_transactions(rows)
 
-            # Handle real dataset: status field → on_time bool
-            if "status" in row and "on_time" not in row:
-                if row["status"] in ("Completed", "Late"):
-                    row["on_time"] = row["status"] == "Completed"
-                else:
-                    row["on_time"] = None
-            elif "on_time" in row:
-                val = row["on_time"]
-                if isinstance(val, str):
-                    row["on_time"] = val.lower() == "true" if val and val != "" else None
+
+def normalize_transactions(rows) -> list[dict]:
+    """Normalise raw transaction rows (dicts from CSV or JSON): numeric amount, Debit/Credit casing,
+    standard category names, ISO dates, and an `on_time` bool/None for recurring bills."""
+    transactions = []
+    for row in rows:
+        row = dict(row)
+        row["amount"] = float(row["amount"])
+
+        # Handle real dataset: status field → on_time bool
+        if "status" in row and "on_time" not in row:
+            if row["status"] in ("Completed", "Late"):
+                row["on_time"] = row["status"] == "Completed"
             else:
                 row["on_time"] = None
+        elif "on_time" in row:
+            val = row["on_time"]
+            if isinstance(val, str):
+                row["on_time"] = val.lower() == "true" if val and val != "" else None
+        else:
+            row["on_time"] = None
 
-            # Normalize transaction type to title case
-            if "type" in row:
-                row["type"] = row["type"].strip().title()  # DEBIT→Debit, CREDIT→Credit
+        # Normalize transaction type to title case
+        if "type" in row:
+            row["type"] = row["type"].strip().title()  # DEBIT→Debit, CREDIT→Credit
 
-            # Normalize category names
-            if "category" in row:
-                cat = row["category"].strip()
-                # Map real dataset categories to standard names
-                cat_map = {
-                    "Utility Bill": "Utility",
-                    "Shopping": "Discretionary",
-                    "Other Income": "Salary",
-                    "Savings": "Savings",
-                }
-                row["category"] = cat_map.get(cat, cat)
+        # Normalize category names
+        if "category" in row:
+            cat = row["category"].strip()
+            # Map real dataset categories to standard names
+            cat_map = {
+                "Utility Bill": "Utility",
+                "Shopping": "Discretionary",
+                "Other Income": "Salary",
+                "Savings": "Savings",
+            }
+            row["category"] = cat_map.get(cat, cat)
 
-            # Normalize date to YYYY-MM-DD
-            if "date" in row and "/" in row["date"]:
-                try:
-                    dt = datetime.strptime(row["date"], "%m/%d/%Y")
-                    row["date"] = dt.strftime("%Y-%m-%d")
-                except ValueError:
-                    pass
+        # Normalize date to YYYY-MM-DD
+        if "date" in row and "/" in str(row["date"]):
+            try:
+                dt = datetime.strptime(row["date"], "%m/%d/%Y")
+                row["date"] = dt.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
 
-            transactions.append(row)
+        transactions.append(row)
     return transactions
 
 
@@ -154,14 +166,15 @@ def _map_education(edu_val: str) -> str:
 def _build_delinquency_flags(record: dict) -> list[str]:
     """Build delinquency flags from real dataset fields."""
     flags = []
-    if record.get("delinq_90plus", 0) > 0:
-        flags.append("90_day_late")
-    if record.get("delinq_60plus", 0) > 0:
-        flags.append("60_day_late")
-    if record.get("delinq_30plus", 0) > 0:
-        flags.append("30_day_late")
-    # Also check for "multiple_late" pattern
-    if len(flags) >= 2:
+    total_events = 0
+    for key, flag in (("delinq_90plus", "90_day_late"), ("delinq_60plus", "60_day_late"),
+                      ("delinq_30plus", "30_day_late")):
+        count = record.get(key) or 0
+        if count > 0:
+            flags.append(flag)
+            total_events += count
+    # Several delinquency events (of one or several kinds) => "multiple_late" (scores 0)
+    if len(flags) >= 2 or total_events >= 2:
         flags = ["multiple_late"]
     return flags
 
@@ -208,7 +221,14 @@ def compute_user_features(user_id: str, demo: dict, user_txns: list[dict]) -> Us
     Engineer features for a single user from their demographics + transactions.
     Fallback path when merged_data.json is not available.
     """
-    monthly_income = demo.get("monthly_income", 1)
+    # Missing / zero / non-numeric income must not crash scoring: fall back to 1 so
+    # ratios saturate (worst-case buckets) instead of raising ZeroDivisionError.
+    try:
+        monthly_income = float(demo.get("monthly_income") or 0)
+    except (TypeError, ValueError):
+        monthly_income = 0.0
+    if monthly_income <= 0:
+        monthly_income = 1.0
 
     # Separate debits and credits
     debits = [t for t in user_txns if t["type"] == "Debit"]
@@ -217,7 +237,7 @@ def compute_user_features(user_id: str, demo: dict, user_txns: list[dict]) -> Us
     # Group transactions by month
     monthly_debits = defaultdict(float)
     for t in debits:
-        month_key = t["date"][:7]  # YYYY-MM
+        month_key = str(t.get("date", ""))[:7]  # YYYY-MM
         monthly_debits[month_key] += t["amount"]
     num_months = max(len(monthly_debits), 1)
 
@@ -361,3 +381,37 @@ def get_user_features(user_id: str, data_dir: str) -> UserFeatures:
     if user_id not in all_features:
         raise ValueError(f"User {user_id} not found")
     return all_features[user_id]
+
+
+# ---------- Upload path: raw transactions + demographics (+ lifestyle fields) ----------
+
+def _pct(value) -> float:
+    """Lifestyle ratios may arrive as 0-1 fractions or 0-100 percentages."""
+    v = float(value)
+    return v * 100 if v <= 1.0 else v
+
+
+def features_from_upload(demo: dict, user_txns: list[dict]) -> tuple[UserFeatures, list[str]]:
+    """
+    Features for one uploaded applicant. Everything derivable from the bank statement is computed
+    from the transactions (spending, essentials share, volatility, savings, bill timeliness, DTI);
+    lifestyle fields in the demographics record that a statement cannot reveal — credit_util,
+    delinq_30plus/60plus/90plus, positive_habits, risk_flags — are taken as given when present.
+    Returns (features, warnings).
+    """
+    warnings = []
+    if not user_txns:
+        warnings.append("No transactions found for this applicant; spending and payment factors default to 0")
+    features = compute_user_features(demo.get("user_id", ""), demo, user_txns)
+    data = features.model_dump()
+
+    if demo.get("credit_util") is not None or demo.get("credit_utilization_pct") is not None:
+        data["credit_utilization_pct"] = round(_pct(demo.get("credit_util", demo.get("credit_utilization_pct"))), 1)
+    if any(k in demo for k in ("delinq_30plus", "delinq_60plus", "delinq_90plus")):
+        data["delinquency_flags"] = _build_delinquency_flags(
+            {k: int(demo.get(k) or 0) for k in ("delinq_30plus", "delinq_60plus", "delinq_90plus")})
+    if demo.get("positive_habits") is not None:
+        data["positive_habits_count"] = min(int(demo["positive_habits"]), 3)
+    if demo.get("risk_flags") is not None:
+        data["risk_flags_count"] = min(int(demo["risk_flags"]), 3)
+    return UserFeatures(**data), warnings

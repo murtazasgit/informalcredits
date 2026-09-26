@@ -5,6 +5,7 @@ import Recommendations from './components/Recommendations'
 import UploadZone from './components/UploadZone'
 import ResultsTable from './components/ResultsTable'
 import ScoreDetail from './components/ScoreDetail'
+import OffersInbox from './components/OffersInbox'
 import './components/mvp.css'
 
 const API_BASE = '/api'
@@ -31,6 +32,25 @@ export default function App() {
         throw new Error(err.detail || 'Upload failed')
       }
       const data = await res.json()
+      setUploadResult(data)
+      setMode('results')
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setUploading(false)
+    }
+  }, [])
+
+  const handleRawUpload = useCallback(async (transactions, demographics) => {
+    setUploading(true)
+    setError(null)
+    const formData = new FormData()
+    formData.append('transactions', transactions)
+    formData.append('demographics', demographics)
+    try {
+      const res = await fetch(`${API_BASE}/upload-raw`, { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Upload failed')
       setUploadResult(data)
       setMode('results')
     } catch (e) {
@@ -87,6 +107,8 @@ export default function App() {
           </div>
         </div>
         <div className="navbar-right">
+          <button type="button" className="api-badge" onClick={() => setMode('offers')}>My offers</button>
+          <a href="#/lender" className="api-badge">Lender portal</a>
           <a href="http://localhost:8000/docs" target="_blank" rel="noopener noreferrer" className="api-badge">
             API Docs
           </a>
@@ -94,14 +116,15 @@ export default function App() {
       </nav>
 
       <main className="main-content">
+        {mode === 'offers' && <OffersInbox apiBase={API_BASE} />}
         {mode === 'upload' && (
-          <UploadZone onUpload={handleUpload} uploading={uploading} error={error} apiBase={API_BASE} />
+          <UploadZone onUpload={handleUpload} onRawUpload={handleRawUpload} uploading={uploading} error={error} apiBase={API_BASE} />
         )}
         {mode === 'results' && uploadResult && (
           <ResultsTable data={uploadResult} onSelect={handleSelectResult} onBack={handleReset} />
         )}
         {mode === 'detail' && selectedResult && (
-          <ScoreDetail result={selectedResult} onBack={() => setMode('results')} />
+          <ScoreDetail result={selectedResult} onBack={() => setMode('results')} apiBase={API_BASE} />
         )}
       </main>
     </div>

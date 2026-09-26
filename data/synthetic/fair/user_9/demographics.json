@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": "U1020",
+    "age": 54,
+    "employment_status": "self-employed",
+    "months_employed": 40,
+    "education_level": "bachelor",
+    "monthly_income": 97784.78,
+    "city_tier": "tier-1",
+    "housing_status": "none",
+    "housing_months": 19,
+    "existing_credit_lines": 1
+  }
+]

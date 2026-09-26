@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": "U1006",
+    "age": 27,
+    "employment_status": "gig-platform",
+    "months_employed": 59,
+    "education_level": "high_school",
+    "monthly_income": 36250.1,
+    "city_tier": "tier-3",
+    "housing_status": "own",
+    "housing_months": 17,
+    "existing_credit_lines": 3
+  }
+]

@@ -18,18 +18,26 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from common.schemas import (
     ScoreResult, ExplainResult, Recommendation, Product, UserFeatures,
     SimulationRequest, SimulationResult, CandidateSummary, Factor,
-    Demographic,
+    Demographic, ExplainResult, PreapproveRequest,
 )
 from backend.scoring_engine.engine import compute_score, simulate_change
 from backend.explainability.explainer import explain_breakdown
 from backend.recommendations.recommender import recommend_products
-from data.feature_engineering import get_all_user_features, load_products, load_demographics
+from backend.ml_engine.predictor import predict_score, explain_ml
+from backend.ml_engine.target_achievement import find_min_change
+from data.feature_engineering import (
+    get_all_user_features, load_products, load_demographics, normalize_transactions, features_from_upload,
+)
+from backend.integrations import bank_client
+from backend.lender.router import build_lender_router, candidate_ref
+from backend.lender.store import OfferStore
+from backend.reports.transparency_report import build_transparency_report
 
 
 # ---------- Logging ----------
@@ -190,6 +198,12 @@ def _parse_csv_row_to_features(row: dict, user_id: str) -> tuple[UserFeatures, l
     def get_int(field: str, default: int = 0) -> int:
         return int(get_float(field, default))
 
+    # Missing data never crashes scoring, but silently scoring it as 0 would be misleading:
+    # tell the user which inputs were absent.
+    missing = [f for f in CSV_COLUMN_ALIASES if _find_column(keys, f) is None]
+    if missing:
+        warnings.append("Missing columns treated as 0/empty: " + ", ".join(missing))
+
     # --- Employment ---
     months_employed = get_int("months_employed", 0)
 
@@ -211,17 +225,12 @@ def _parse_csv_row_to_features(row: dict, user_id: str) -> tuple[UserFeatures, l
     # Try to compute from monthly_income + monthly_spend if the ratio isn't direct
     monthly_income = get_float("monthly_income", 0.0)
     monthly_spend = get_float("monthly_spend", 0.0)
-    if monthly_income > 0 and monthly_spend > 0:
+    has_spend = _find_column(keys, "monthly_spend") and str(get("monthly_spend") or "").strip() != ""
+    if monthly_income > 0 and has_spend:
         spend_to_income = round(monthly_spend / monthly_income, 2)
     else:
-        # Try dti or a precomputed ratio column
-        spend_col = _find_column(keys, "monthly_spend")
-        if not spend_col:
-            # Use a fallback or 0.5
-            spend_to_income = 0.5
-            warnings.append("Could not determine spend-to-income ratio; defaulting to 0.5")
-        else:
-            spend_to_income = 0.5
+        spend_to_income = 0.5
+        warnings.append("Could not determine spend-to-income ratio (needs monthly_income and monthly_spend); defaulting to 0.5")
 
     # --- Essential spend % ---
     essential_raw = get_float("essential_spend_pct", 0.0)
@@ -282,6 +291,35 @@ def _parse_csv_row_to_features(row: dict, user_id: str) -> tuple[UserFeatures, l
     return features, warnings
 
 
+def _score_bundle(features: UserFeatures, user_id: str, row_number: int, warnings: list[str]) -> dict:
+    """Score one applicant end to end: rule score, explanation, recommendations, ML cross-check."""
+    score_result = compute_score(features)
+    explanation = explain_breakdown(score_result.breakdown, user_id=user_id)
+    recommendations = recommend_products(score_result.total_score, _products)
+
+    # ML explanation of the rule-based score: a second, independent numerical
+    # estimate (probability of default -> equivalent score) from the trained
+    # model. Wrapped in its own try/except so a model hiccup never blocks the
+    # rule-based result, which stays the primary, must-have score.
+    ml_score = None
+    try:
+        ml_score = predict_score(features).model_dump()
+        ml_score["drivers"] = explain_ml(features)
+    except Exception as ml_err:
+        logger.warning(f"ML scoring failed for {user_id}: {ml_err}")
+
+    return {
+        "user_id": user_id,
+        "row_number": row_number,
+        "score": score_result.model_dump(),
+        "ml_score": ml_score,
+        "explanation": explanation.model_dump(),
+        "recommendations": [r.model_dump() for r in recommendations],
+        "features": features.model_dump(),
+        "warnings": warnings,
+    }
+
+
 @app.post("/upload-csv")
 async def upload_csv(file: UploadFile = File(...)):
     """
@@ -316,6 +354,12 @@ async def upload_csv(file: UploadFile = File(...)):
         text = content.decode("latin-1")
 
     reader = csv.DictReader(io.StringIO(text))
+    headers = {h.lower().strip() for h in (reader.fieldnames or [])}
+    if "transaction_id" in headers or {"amount", "category"} <= headers:
+        raise HTTPException(
+            status_code=400,
+            detail="This looks like a bank-transactions file. Upload it together with a demographics JSON "
+                   "(POST /upload-raw); /upload-csv expects one row of features per applicant.")
     rows = list(reader)
 
     if not rows:
@@ -339,19 +383,7 @@ async def upload_csv(file: UploadFile = File(...)):
 
         try:
             features, warnings = _parse_csv_row_to_features(row, user_id)
-            score_result = compute_score(features)
-            explanation = explain_breakdown(score_result.breakdown, user_id=user_id)
-            recommendations = recommend_products(score_result.total_score, _products)
-
-            results.append({
-                "user_id": user_id,
-                "row_number": i + 1,
-                "score": score_result.model_dump(),
-                "explanation": explanation.model_dump(),
-                "recommendations": [r.model_dump() for r in recommendations],
-                "features": features.model_dump(),
-                "warnings": warnings,
-            })
+            results.append(_score_bundle(features, user_id, i + 1, warnings))
         except Exception as e:
             logger.error(f"Error processing row {i+1} ({user_id}): {e}")
             errors.append({"row_number": i + 1, "user_id": user_id, "error": str(e)})
@@ -365,6 +397,90 @@ async def upload_csv(file: UploadFile = File(...)):
         "errors": errors,
         "processed_at": datetime.now().isoformat(),
     }
+
+
+@app.post("/upload-raw")
+async def upload_raw(transactions: UploadFile = File(...), demographics: UploadFile = File(...)):
+    """
+    Upload the spec's raw inputs and score every applicant:
+      transactions  CSV or JSON — transaction_id, user_id, date, amount, category, type, on_time
+      demographics  JSON list   — user_id, age, employment_status, education_level, monthly_income,
+                                  city_tier, months_employed, housing_status, housing_months and optional
+                                  lifestyle fields (credit_util, delinq_30plus/60plus/90plus,
+                                  positive_habits, risk_flags)
+    Templates: data/upload_template/ (regenerate with data/generate_upload_template.py).
+    """
+    def decode(raw: bytes) -> str:
+        try:
+            return raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return raw.decode("latin-1")
+
+    try:
+        demo_data = json.loads(decode(await demographics.read()))
+        if isinstance(demo_data, dict):
+            demo_data = demo_data.get("users") or demo_data.get("demographics") or []
+        if not isinstance(demo_data, list) or not demo_data:
+            raise ValueError("expected a non-empty JSON list of user objects")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid demographics JSON: {e}")
+
+    tx_text = decode(await transactions.read())
+    try:
+        if (transactions.filename or "").lower().endswith(".json"):
+            parsed = json.loads(tx_text)
+            tx_rows = parsed["transactions"] if isinstance(parsed, dict) else parsed
+        else:
+            tx_rows = list(csv.DictReader(io.StringIO(tx_text)))
+        tx_all = normalize_transactions(tx_rows)
+    except (ValueError, KeyError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid transactions file: {e}")
+
+    by_user: dict[str, list] = {}
+    for t in tx_all:
+        by_user.setdefault(str(t.get("user_id", "")), []).append(t)
+    known = {str(d.get("user_id", "")) for d in demo_data if isinstance(d, dict)}
+
+    results, errors = [], []
+    for i, demo in enumerate(demo_data):
+        user_id = str(demo.get("user_id", "")).strip() if isinstance(demo, dict) else ""
+        if not user_id:
+            errors.append({"row_number": i + 1, "user_id": "", "error": "demographics record has no user_id"})
+            continue
+        try:
+            features, warnings = features_from_upload(demo, by_user.get(user_id, []))
+            results.append(_score_bundle(features, user_id, i + 1, warnings))
+        except Exception as e:
+            logger.error(f"Error processing applicant {user_id}: {e}")
+            errors.append({"row_number": i + 1, "user_id": user_id, "error": str(e)})
+    for orphan in sorted(set(by_user) - known):
+        errors.append({"row_number": 0, "user_id": orphan, "error": "transactions found but no demographics record"})
+
+    return {
+        "filename": f"{transactions.filename} + {demographics.filename}",
+        "total_rows": len(demo_data),
+        "processed": len(results),
+        "failed": len(errors),
+        "results": results,
+        "errors": errors,
+        "processed_at": datetime.now().isoformat(),
+    }
+
+
+UPLOAD_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "data", "upload_template")
+UPLOAD_TEMPLATE_FILES = {"transactions.csv": "text/csv", "transactions.json": "application/json",
+                         "demographics.json": "application/json"}
+
+
+@app.get("/upload-template/{name}")
+def download_upload_template(name: str):
+    """Serve the raw-upload template files (whitelisted; single source of truth is data/upload_template/)."""
+    if name not in UPLOAD_TEMPLATE_FILES:
+        raise HTTPException(status_code=404, detail="Unknown template file")
+    path = os.path.join(UPLOAD_TEMPLATE_DIR, name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Template not generated; run python data/generate_upload_template.py")
+    return FileResponse(path, media_type=UPLOAD_TEMPLATE_FILES[name], filename=name)
 
 
 @app.get("/csv-template")
@@ -456,7 +572,47 @@ def get_user_score(user_id: str):
         raise HTTPException(status_code=404, detail=f"Score for {user_id} not found")
     return _scores[user_id]
 
+@app.get("/score/{user_id}/ml", response_model=ScoreResult)
+def get_user_score_ml(user_id: str):
+    """Same as /score/{user_id}, but scored with the trained Probability-of-Default
+    model instead of the rule engine (method='ml_pd', includes probability_of_default)."""
+    if user_id not in _user_features:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+    return predict_score(_user_features[user_id])
 
+
+# ---------- Target Achievement (counterfactual "what do I need to change") ----------
+
+class TargetAchievementRequest(BaseModel):
+    target_score: int
+    target_product_name: Optional[str] = None
+    user_id: Optional[str] = None    # looks up a pre-loaded dataset user
+    features: Optional[dict] = None  # OR pass a UserFeatures dict directly — this is what
+                                      # the frontend sends for CSV-uploaded applicants, since
+                                      # those aren't cached server-side (use result.features)
+
+
+@app.post("/target-achievement")
+def target_achievement(request: TargetAchievementRequest):
+    if request.features:
+        try:
+            features = UserFeatures(**request.features)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid features: {e}")
+    elif request.user_id and request.user_id in _user_features:
+        features = _user_features[request.user_id]
+    else:
+        raise HTTPException(status_code=404, detail="Provide `features` (from your score result) or a known `user_id`.")
+    try:
+        return find_min_change(
+            features,
+            request.target_score,
+            compute_score,
+            target_product_name=request.target_product_name,
+        )
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
 # ---------- Dashboard ----------
 
 @app.get("/dashboard/{user_id}")
@@ -505,29 +661,114 @@ def list_products():
     return [p.model_dump() for p in _products]
 
 
-# ---------- Lender Candidates ----------
+# ---------- Lender portal (separate, authenticated router) ----------
 
-@app.get("/lender/candidates")
-def get_candidates(
-    min_score: int = Query(0, ge=0),
-    max_score: int = Query(1000, le=1000),
-    city_tier: str = Query(None),
-):
-    candidates = []
-    for demo in _demographics:
-        uid = demo["user_id"]
-        if uid not in _scores:
-            continue
-        score = _scores[uid]
-        if score.total_score < min_score or score.total_score > max_score:
-            continue
-        if city_tier and demo.get("city_tier") != city_tier:
-            continue
-        ref = "C-" + hashlib.md5(uid.encode()).hexdigest()[:6]
-        candidates.append(CandidateSummary(
-            candidate_ref=ref,
-            score=score.total_score,
-            risk_category=score.risk_category,
-            city_tier=demo.get("city_tier", "unknown"),
-        ).model_dump())
-    return candidates
+offer_store = OfferStore()
+app.include_router(build_lender_router(
+    get_demographics=lambda: _demographics,
+    get_scores=lambda: _scores,
+    get_products=lambda: _products,
+    get_analysis=lambda uid: _score_bundle(_user_features[uid], uid, 0, []) if uid in _user_features else None,
+    store=offer_store,
+))
+
+
+# ---------- Consumer side of lender offers ----------
+# NOTE (MVP): there is no consumer login; the user_id in the path identifies the consumer.
+
+@app.get("/users/{user_id}/offers")
+def get_user_offers(user_id: str):
+    if user_id not in _user_features:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+    return [{k: v for k, v in o.items() if k not in ("user_id", "candidate_ref")}
+            for o in offer_store.for_user(user_id)]
+
+
+class OfferResponse(BaseModel):
+    action: str   # "accept" | "reject"
+
+
+@app.post("/users/{user_id}/offers/{offer_id}/respond")
+def respond_to_offer(user_id: str, offer_id: int, body: OfferResponse):
+    if body.action not in ("accept", "reject"):
+        raise HTTPException(status_code=422, detail="action must be 'accept' or 'reject'")
+    offer = offer_store.respond(offer_id, user_id, accept=body.action == "accept")
+    if offer is None:
+        raise HTTPException(status_code=404, detail="Offer not found for this user")
+    if offer.pop("_already_answered", False):
+        raise HTTPException(status_code=409, detail=f"Offer already {offer['status']}")
+    return {"offer_id": offer_id, "status": offer["status"]}
+
+
+# ---------- Bank pre-approval (calls the separate bank-partner-api) ----------
+
+def _resolve_features(user_id: Optional[str], features: Optional[dict]) -> UserFeatures:
+    if features:
+        try:
+            return UserFeatures(**features)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid features: {e}")
+    if user_id and user_id in _user_features:
+        return _user_features[user_id]
+    raise HTTPException(status_code=404, detail="Provide `features` (from your score result) or a known `user_id`.")
+
+
+@app.post("/offers/preapprove")
+def preapprove_offer(request: PreapproveRequest):
+    product = next((p for p in _products if p.product_id == request.product_id), None)
+    if product is None:
+        raise HTTPException(status_code=404, detail=f"Unknown product {request.product_id}")
+    features = _resolve_features(request.user_id, request.features)
+    score = compute_score(features)   # always recomputed server-side; never trust a client-supplied score
+    try:
+        return bank_client.preapprove({
+            "applicant_ref": candidate_ref(features.user_id),   # opaque; no PII leaves this service
+            "score": score.total_score,
+            "risk_category": score.risk_category,
+            "product_id": product.product_id,
+            "product_name": product.name,
+            "min_score_required": product.min_score_required,
+            "interest_rate": product.interest_rate,
+        })
+    except bank_client.BankApiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
+@app.get("/offers/preapprove/{application_id}")
+def preapproval_status(application_id: str):
+    try:
+        return bank_client.offer_status(application_id)
+    except bank_client.BankApiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
+# ---------- PDF Transparency Report ----------
+
+class ReportRequest(BaseModel):
+    """The exact objects the dashboard already holds (/upload-csv or /dashboard result) — nothing is recomputed."""
+    score: ScoreResult
+    explanation: ExplainResult
+    recommendations: list[Recommendation]
+    ml_score: Optional[dict] = None
+
+
+def _pdf_response(pdf: bytes, user_id: str) -> Response:
+    safe = "".join(c for c in user_id if c.isalnum() or c in "-_") or "applicant"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="transparency-report-{safe}.pdf"'})
+
+
+@app.post("/report/pdf")
+def report_pdf(body: ReportRequest):
+    pdf = build_transparency_report(body.score, body.explanation, body.recommendations, body.ml_score)
+    return _pdf_response(pdf, body.score.user_id)
+
+
+@app.get("/report/{user_id}")
+def report_for_user(user_id: str):
+    d = get_dashboard(user_id)   # existing dashboard payload: score + explanation + recommendations
+    pdf = build_transparency_report(
+        ScoreResult(**d["score"]), ExplainResult(**d["explanation"]),
+        [Recommendation(**r) for r in d["recommendations"]],
+    )
+    return _pdf_response(pdf, user_id)

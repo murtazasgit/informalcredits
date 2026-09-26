@@ -1,0 +1,4 @@
+user_id,months_at_job,housing,rent_on_time_months,digital_payment_rate,education,monthly_income,monthly_spend,essential_pct,cashflow_volatility,savings_days,on_time_rate,dti,credit_util,delinq_30plus,delinq_60plus,delinq_90plus,positive_habits,risk_flags
+john_doe,24,rent,12,0.85,bachelor,5000,2000,0.65,0.08,90,0.92,0.25,0.2,0,0,0,2,0
+jane_mid,14,rent,8,0.7,cert,5000,3500,0.55,0.15,30,0.82,0.35,0.4,0,0,0,1,0
+sam_low,6,rent,2,0.4,highschool,5000,4200,0.65,0.3,7,0.65,0.5,0.7,1,0,0,0,1

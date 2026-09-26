@@ -1,91 +1,87 @@
-# REQUIREMENTS_COVERAGE.md — every line of the spec, mapped to where it's built
+# REQUIREMENTS_COVERAGE.md — audit of the repo against the full spec
 
-Use this to sanity-check nothing was missed. ✅ = must-have, covered. 🟡 = good-to-have/stretch, covered. 
+Audit method: every item below was checked by reading the code; where possible it was also run
+(backend started on :8010, endpoints hit with curl, `pytest` run — 12 existing tests pass).
+Status: DONE / PARTIAL / MISSING. Tables show the **pre-implementation** audit (Part 1); the
+"After Part 2" section at the bottom records what changed.
 
-## IV.1 Functional Requirements
-| Spec requirement | Covered in |
-|---|---|
-| Bundled dataset loading and feature engineering | `data/feature_engineering.py` |
-| Applicant CSV upload and row-by-row scoring | `POST /upload-csv` in `backend/api/main.py` |
-| Integrated rule-based scoring pipeline | `backend/scoring_engine/engine.py` + `backend/api/main.py` |
-| Rule table, sub-factors, bonus/penalty | `backend/scoring_engine/engine.py` |
-| User score dashboard | `frontend/user-dashboard/` |
-| Factor explanations | `backend/explainability/explainer.py` |
-| Product recommendations | `backend/recommendations/recommender.py` |
-| Bank integration | Not implemented |
-| PDF transparency report | Not implemented |
-| User authentication and lender UI | Not implemented |
-| Candidate search | Basic API endpoint: `GET /lender/candidates`; no lender UI or authentication |
-| Candidate anonymization | `backend/api/main.py` (`CandidateSummary`) |
-| Offer campaigns | Not implemented |
+## A. Input / data ingestion
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| 1 | Transaction ingestion (ID, Date, Amount, Category, Type) | PARTIAL | `data/feature_engineering.py::load_transactions`, `common/schemas.py::Transaction`, `data/synthetic/transactions.csv` | CSV only — no JSON transaction loader. Transaction path is only used as a fallback when `merged_data.json` is absent. |
+| 2 | Timely-payment markers for recurring bills | DONE | `Transaction.on_time`; `compute_user_features` (digital_bill_ontime_pct, on_time_payment_pct) | Users with no bill history silently get 0% (i.e. penalised, not neutral). |
+| 3 | Demographic ingestion (JSON) | DONE | `load_demographics`, `data/synthetic/demographics.json`, `common/schemas.py::Demographic` | All 6 required fields present. |
+| 4 | Stability markers (employment / residency length) | DONE | `months_employed`, `housing_months` in `Demographic` / `UserFeatures` | |
+| 5 | Lifestyle / "new-age" fields | DONE | `data/Datasets_AltCredit/new_age_sample_data.json`, `features_from_merged`, `/upload-csv` aliases | Local, git-ignored dataset. |
+| 6 | Product catalog ingestion (JSON) | DONE | `load_products`, `data/synthetic/product_catalog.json` | |
 
-## IV.2 Testing & Quality Assurance
-| Spec requirement | Covered in |
-|---|---|
-| Scoring/model regression tests | `backend/testing/test_mvp_models.py` |
-| Full API-to-dashboard integration tests | Not implemented |
-| Robustness tests for missing data | Not implemented |
+## B. Scoring pipeline
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| 7 | Feature engineering | DONE | `compute_user_features`, `features_from_merged` | **Bugs:** `ZeroDivisionError` when monthly_income = 0, `TypeError` when None (verified by running). Merged path collapses `delinq_30plus=3` into a single `30_day_late` flag (spec: multiple → 0). |
+| 8 | Rule-based 0–1000 score, exact point table | DONE | `backend/scoring_engine/engine.py` (all 14 sub-factors) | Thresholds and points checked line-by-line against the spec: all match. Note the factor maxima sum to 1320 and are clamped to 1000 (spec-inherent). No test asserted the boundaries — see E20. |
+| 9 | ML (PD) pipeline wired end to end | DONE | `backend/ml_engine/predictor.py`, `/upload-csv` (`ml_score` + drivers), `GET /score/{id}/ml` | Wired into API; failure is isolated so rule score still returns. |
 
-## IV.3 Performance & Accuracy
-| Spec requirement | Covered in |
-|---|---|
-| End-to-end scoring latency < 15–30s | Not measured yet |
+## C. User-mode outputs
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| 10 | Dashboard: score + breakdown + risk category | DONE | `frontend/user-dashboard` (ScoreGauge, FactorBreakdown, ScoreDetail), `/dashboard/{id}`, `/upload-csv` | |
+| 11 | ≥4 colour-coded tiers | DONE | `ScoreGauge.jsx` RISK_COLORS (Excellent/Good/Fair/Poor) | |
+| 12 | Natural-language explainability | PARTIAL | `backend/explainability/explainer.py` | Returns label + points and a generic summary, but no per-factor sentence like "Consistency in utility bills +15 pts". |
+| 13 | Recommendation engine | DONE | `backend/recommendations/recommender.py` | |
+| 14 | Offer click → separate bank API (API key) | MISSING | — | No `bank-partner-api/`, no click handler in `Recommendations.jsx`. |
+| 15 | Downloadable PDF Transparency Report | MISSING | — | `/report/*` → 404. No PDF library in requirements. |
 
-## IV.4 Code Quality & Reproducibility
-| Spec requirement | Covered in |
-|---|---|
-| Modular architecture (Data / API / Frontend separated) | Repository structure — see root `README.md` |
-| Backend dependency manifest | Root `requirements.txt` |
-| Version control practices | `CONTRIBUTING.md` |
-| No hard-coded secrets | `CONTRIBUTING.md` §7, `.gitignore` |
-| Logging | `backend/api/README.md` (add basic `logging` calls — noted in tasks checklist) |
+## D. Business user mode (lender portal)
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| 16 | Business login | MISSING | — | No auth anywhere; `/lender/login` → 404. |
+| 17 | Candidate search & filter | PARTIAL | `GET /lender/candidates` (min/max score, city_tier) | Works (returns data) but is **unauthenticated** and there is no lender UI. |
+| 18 | PII anonymisation until acceptance | PARTIAL | `CandidateSummary` returns only ref/score/tier | Data set has no name/address/phone, so nothing to mask and no accept-reveal flow. `candidate_ref` is an unsalted MD5 prefix of user_id. |
+| 19 | Push offers to consumers | MISSING | `OfferRequest/OfferResult` schemas and `database.models.Offer` exist but no endpoint | Nothing appears on user dashboard. |
 
-## V. Expected Outcomes
-| Spec requirement | Covered in |
-|---|---|
-| Alternative risk engine using non-traditional features | `backend/scoring_engine/README.md` |
-| Color-coded score, ≥4 risk bands | `common/schemas.py` (`risk_category` enum: Poor/Fair/Good/Excellent) + `frontend/user-dashboard/README.md` |
-| Visualized "Credit Drivers" | `frontend/user-dashboard/README.md` (`FactorBreakdownChart`) |
-| Curated "Next Steps" product recommendations | `backend/recommendations/README.md` |
-| Financial inclusion demo (good borrower, no credit history) | Achieved by design of the rule-based engine — call this out explicitly in your demo script |
-| XAI natural-language explanations | `backend/explainability/README.md` |
-| Modular, scalable stack | Overall repo structure |
+## E. Testing & quality
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| 20 | Score accuracy vs synthetic ground truth | MISSING | `backend/testing/test_mvp_models.py` has 1 hand-computed case only | No per-threshold boundary tests. |
+| 21 | Full-stack integration test | MISSING | — | `httpx` (needed for TestClient) is not installed / not in requirements. |
+| 22 | Missing-data robustness | MISSING | — | Confirmed crash on zero/None income (see #7). |
+| 23 | Latency < 15–30 s | MISSING (not measured) | — | Ad hoc measurement: `/dashboard/USR_001` 0.22 s, `/upload-csv` (template) 0.40 s. Needs a committed timing test. |
 
-## VI. Solution Requirements (Good to Have)
-| Spec requirement | Covered in |
-|---|---|
-| Advanced feature engineering (Income Volatility Index, Savings Velocity) | 🟡 `data/README.md` — noted as stretch addition to feature engineering |
-| Dynamic Product Mapping (recs update as score changes) | 🟡 `backend/recommendations/README.md` |
-| Advanced XAI (mathematically grounded) | 🟡 `backend/explainability/README.md` (SHAP section) |
-| Consumer-centric, fintech-style UI | `frontend/user-dashboard/README.md` |
-| "What-If" Simulator | `backend/scoring_engine/README.md` (`simulate_change`) + `backend/api/README.md` (`/simulate`) |
-| 4 worked What-If examples (Saving Buffer, Utility Auto-pay, Discretionary Spike, Delinquency) | 🟡 `backend/scoring_engine/README.md` §What-If worked examples |
-| PD, propensity, and counterfactual ML models | Not implemented |
-| Export options | JSON profile: `GET /export/{user_id}`; PDF not implemented |
-| API-first architecture | `backend/api/README.md` |
-| Self-contained SQLite store | `database/README.md` |
-| Synthetic-data-ready (no manual preprocessing) | `data/README.md` |
-| New User Login Portal (profile creation + upload CSV/PDF) | 🟡 `frontend/user-dashboard/README.md` §Onboarding |
-| OCR Integration (Tesseract, scan PDF bank statement) | 🟡 `data/README.md` §OCR |
-| Docker deployment | Not implemented |
+## F. Architecture
+| # | Item | Status | Evidence | Notes |
+|---|---|---|---|---|
+| 24 | Modular layers | DONE | `data/`, `backend/scoring_engine`, `backend/ml_engine`, `backend/api`, `frontend/` | |
+| 25 | Single requirements.txt | PARTIAL | root `requirements.txt` | Lacks `pytest`, `httpx`, PDF lib; stale `common/requirements.txt` was deleted in working tree. |
 
-## VIII. Input formats
-| Spec requirement | Covered in |
-|---|---|
-| Transactional Data exact fields | `common/schemas.py` (`Transaction`) + `data/README.md` |
-| Demographic Data exact fields | `common/schemas.py` (`Demographic`) + `data/README.md` |
-| Product Catalog exact fields | `common/schemas.py` (`Product`) + `data/README.md` |
+## After Part 2 (implemented, all verified by `python -m pytest backend` -> 131 passed)
+| # | Now | What / where | Verified by |
+|---|---|---|---|
+| 1 | DONE | JSON transaction loading — `data/feature_engineering.py::load_transactions` | `test_robustness.py::test_json_transactions_are_ingested` |
+| 7 | DONE | Zero/None/invalid income no longer crashes; multiple delinquency events -> `multiple_late`; CSV `monthly_spend=0` no longer replaced by 0.5; missing-column warnings | `test_robustness.py` |
+| 8 | DONE | Engine unchanged (already matched); now proven | `test_scoring_ground_truth.py` (85 cases) |
+| 12 | DONE | `Factor.text` per factor, e.g. "Utility & bill payment consistency +45 pts (of 70 possible, moderate)" — `explainer.py`, `common/schemas.py` | `test_integration_and_latency.py`, PDF |
+| 14 | DONE (mock) | `bank-partner-api/app.py` (own port 8100, `X-API-Key`), client `backend/integrations/bank_client.py`, `POST /offers/preapprove`, `GET /offers/preapprove/{id}`, "Get pre-approved" button in `Recommendations.jsx` | `test_bank_and_report.py`; live two-process curl |
+| 15 | DONE | `backend/reports/transparency_report.py`, `GET /report/{user_id}`, `POST /report/pdf`, download button in `ScoreDetail.jsx` | `test_bank_and_report.py`; PDF rendered and inspected |
+| 16 | DONE (mock creds) | `POST /lender/login` -> bearer token, all lender routes gated — `backend/lender/router.py` | `test_lender_portal.py::test_endpoints_are_gated` |
+| 17 | DONE | `GET /lender/candidates` (min/max score, city tier, risk category) + UI at `#/lender` (`src/lender/LenderPortal.jsx`) | `test_candidate_search_filters` |
+| 18 | DONE | Server-side allow-list; PII (synthetic, `backend/lender/pii.py`) released only after that lender's offer is accepted; refs are HMACs | `test_pii_and_real_ids_never_in_candidate_responses`, accept/reject tests |
+| 19 | DONE | `POST /lender/offers` (multi-candidate), consumer `GET /users/{id}/offers` + `POST .../respond`, "My offers" view (`OffersInbox.jsx`) | `test_push_offer_consumer_sees_it_and_accept_unlocks_pii` |
+| 20 | DONE | `test_scoring_ground_truth.py`: every threshold boundary, 300-profile oracle comparison, hand-computed totals/tiers | pytest |
+| 21 | DONE | `test_integration_and_latency.py` (CSV in -> full dashboard payload incl. ML score; exact 950 case; dataset dashboard) | pytest |
+| 22 | DONE | `test_robustness.py` | pytest |
+| 23 | DONE (measured) | single profile 0.03-0.10 s; dashboard 0.004 s; cold ingest+score of 500 users 0.03 s; **200-row upload 6.5-7.1 s** | `pytest -s test_integration_and_latency.py` |
+| 25 | DONE | `requirements.txt` now includes httpx, reportlab, pytest | — |
 
-## IX. Guardrails
-| Spec requirement | Covered in |
-|---|---|
-| No real PII, synthetic only | Root `README.md` §6, reinforced in `data/README.md` and `backend/api/README.md` (anonymization) |
-| No deep-learning black boxes | Root `README.md` §6; current MVP uses rule-based scoring |
-| No external credit bureau APIs | Root `README.md` §6 |
-| No production-grade deployment needed | Root `README.md` §6 |
-| No legal/compliance certification needed | Root `README.md` §6 |
+Known limits / assumptions: offers are stored in memory (lost on restart); there is no consumer login
+(user_id in the URL identifies the consumer); lender credentials are mock defaults from env; the bundled
+data has no real names/addresses, so contact PII is synthetic; bulk CSV upload costs ~30 ms/row because the
+ML model is called per row (a 500+ row file would approach the 15 s budget — batch the ML call to fix);
+the new frontend screens were compiled (`npm run build`) but not exercised in a browser.
 
----
-**Bottom line:** The runnable MVP covers rule-based scoring, explanations, recommendations, the
-dashboard, and what-if simulation. Items marked "Not implemented" are future work, not working
-starter modules.
+### Update: lender view and split synthetic data
+- Lender portal now identifies candidates by **user_id**; only contact details (name, address, phone) stay masked
+  server-side until acceptance. Clicking a user opens the same score analysis the consumer sees
+  (`GET /lender/candidates/{user_id}`: score breakdown, explanation, ML cross-check, products, features).
+- `data/synthetic/<poor|fair|good>/user_<n>/` holds each synthetic user's own `demographics.json`,
+  `transactions.csv` and `expected_score.json` (`data/split_synthetic.py`; tests in `test_synthetic_split.py`).

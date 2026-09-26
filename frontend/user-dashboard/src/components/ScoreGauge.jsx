@@ -45,8 +45,8 @@ export default function ScoreGauge({ score }) {
       <div className="score-category" style={{ color }}>
         {risk_category}
       </div>
-      <div className="score-method">
-        Rule-Based Assessment
+            <div className="score-method">
+        Rule-Based Assessment (primary score)
       </div>
     </>
   )

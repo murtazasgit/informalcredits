@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": "U1007",
+    "age": 23,
+    "employment_status": "part-time",
+    "months_employed": 41,
+    "education_level": "phd",
+    "monthly_income": 107266.46,
+    "city_tier": "tier-2",
+    "housing_status": "none",
+    "housing_months": 8,
+    "existing_credit_lines": 2
+  }
+]

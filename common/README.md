@@ -38,12 +38,12 @@ def compute_score(features: UserFeatures) -> ScoreResult:
 | Class | Produced by | Consumed by |
 |---|---|---|
 | `Transaction`, `Demographic`, `Product` | `data/` (raw input parsing) | `data/` internally |
-| `UserFeatures` | `data/` | `scoring_engine/`, `ml_engine/` |
-| `ScoreBreakdown`, `ScoreResult` | `scoring_engine/` or `ml_engine/` | `explainability/`, `reports/`, `api/` |
-| `Factor`, `ExplainResult` | `explainability/` | `reports/`, `api/`, frontend |
+| `UserFeatures` | `data/` | `scoring_engine/` |
+| `ScoreBreakdown`, `ScoreResult` | `scoring_engine/` | `explainability/`, `api/` |
+| `Factor`, `ExplainResult` | `explainability/` | `api/`, frontend |
 | `Recommendation` | `backend/recommendations/` | `api/`, frontend |
 | `SimulationRequest`, `SimulationResult` | `api/` (calls `scoring_engine/`) | frontend |
-| `CandidateSummary`, `OfferRequest`, `OfferResult` | `api/` | `frontend/lender-portal/` |
+| `CandidateSummary`, `OfferRequest`, `OfferResult` | `api/` | API responses (lender UI is future work) |
 
 This keeps merges clean: as long as everyone imports from here, two people can build their
 modules in parallel all week and the integration step is "wire the functions together", not

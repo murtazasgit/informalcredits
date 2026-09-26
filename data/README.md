@@ -113,7 +113,7 @@ def essential_spend_pct(transactions: pd.DataFrame) -> float:
 
 ## Handoff
 Push your output as a JSON file or a function `get_user_features(user_id) -> dict` that
-`backend/scoring_engine/` and `backend/ml_engine/` both import directly.
+`backend/scoring_engine/` imports directly. ML scoring is not part of the current MVP.
 
 ## OCR Integration (stretch — "Good to Have")
 

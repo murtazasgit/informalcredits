@@ -8,7 +8,7 @@ output ("Automated Recommendation Engine"), separate from the raw score.
 Pure Python. Simple filter/rank logic — no ML needed for the must-have version.
 
 ## Input
-- `ScoreResult` (from `scoring_engine/` or `ml_engine/`) — specifically `total_score`
+- `ScoreResult` from `scoring_engine/` — specifically `total_score`
 - `Product` list (from `data/`, parsed from `product_catalog.json`)
 
 ## Output (contract with `backend/api/` and frontend)

@@ -1,28 +1,32 @@
 # Module: Backend API (FastAPI) — integration hub
 
 ## Goal
-Wire together `data/`, `scoring_engine/`, `ml_engine/`, `explainability/`, and `reports/` behind
-a REST API, backed by SQLite, with auth for the two user modes (User / Business-Lender).
+Wire the implemented data, scoring, explainability, recommendation, and dashboard flow behind a
+FastAPI service with SQLite persistence.
 
 ## Tech stack
 - **FastAPI** — routing, validation, auto `/docs`
 - **SQLAlchemy + SQLite** — persistence (`database/` owns the schema)
-- **FastAPI-Users** or **python-jose (JWT)** — auth with two roles: `user`, `lender`
 
 ## Endpoints
 
 | Method | Path | Input | Output | Notes |
 |---|---|---|---|---|
-| POST | `/users/register` | demographic JSON | `{user_id}` | creates profile |
-| POST | `/transactions/upload` | CSV/JSON file | `{status}` | calls `data/` ingestion |
-| POST | `/score/{user_id}` | — | score breakdown JSON | calls `scoring_engine` (+ `ml_engine` if flag set) |
-| GET | `/score/{user_id}` | — | cached score JSON | reads from DB |
-| GET | `/explain/{user_id}` | — | factors JSON | calls `explainability` |
-| GET | `/report/{user_id}` | — | PDF file | calls `reports` |
-| POST | `/simulate` | `{user_id, hypothetical_changes}` | new score + delta | "What-If" simulator |
-| POST | `/auth/login` | `{username, password, role}` | JWT token | role = user or lender |
-| GET | `/lender/candidates` | query params (score range, city_tier) | anonymized list | lender-only, JWT required |
-| POST | `/lender/offer` | `{user_id, product_id}` | `{status}` | push offer to user dashboard |
+| GET | `/` | — | health status | Includes number of loaded users |
+| GET | `/users` | — | user list | IDs and score summaries |
+| GET | `/users/{user_id}` | user ID | demographic record | Seeded profiles only |
+| POST | `/score/{user_id}` | user ID | `ScoreResult` | Recomputes the rule-based score |
+| GET | `/score/{user_id}` | user ID | `ScoreResult` | Returns cached score |
+| GET | `/explain/{user_id}` | user ID | `ExplainResult` | Factor explanations |
+| GET | `/recommendations/{user_id}` | user ID | recommendations | Matches the score against catalog products |
+| POST | `/simulate` | `{user_id, hypothetical_changes}` | `SimulationResult` | What-if score calculation |
+| GET | `/features/{user_id}` | user ID | `UserFeatures` | Feature values for debugging |
+| GET | `/products` | — | product list | Loaded product catalog |
+| POST | `/upload-csv` | multipart CSV file | scores and explanations for each row | Main dashboard upload flow |
+| GET | `/csv-template` | — | sample row and supported columns | Use to prepare an upload |
+| GET | `/lender/candidates` | score range, optional city tier | anonymized candidates | No lender UI or authentication yet |
+| GET | `/export/{user_id}` | user ID | JSON credit profile | Score, explanation, and recommendations |
+| GET | `/dashboard/{user_id}` | user ID | dashboard payload | Single call for the user dashboard |
 
 ## Sample I/O
 
@@ -50,7 +54,7 @@ anonymization requirement. Resolve the real identity only after the user accepts
 from fastapi import FastAPI, Depends
 from scoring_engine import compute_score
 from explainability import explain_breakdown
-from reports import generate_report
+from backend.recommendations.recommender import recommend_products
 
 app = FastAPI(title="AltCredit API")
 
@@ -67,13 +71,8 @@ def explain_user(user_id: str):
     return {"user_id": user_id, "factors": explain_breakdown(result["breakdown"])}
 ```
 
-## Tasks checklist
-- [ ] Set up SQLAlchemy models (see `database/README.md`)
-- [ ] Implement all endpoints in the table above
-- [ ] Implement JWT auth with two roles
-- [ ] Implement anonymization logic for `/lender/candidates`
-- [ ] Wire CORS so the frontend (different port) can call the API
-- [ ] Write at least 2 integration tests (happy path + missing-data path)
+The current MVP endpoints above are implemented. Authentication, registration, PDF reports, offer
+management, and API integration tests are future work.
 
 ## Handoff
 This is the integration point — everyone else's module gets imported here. Keep interfaces
@@ -85,9 +84,6 @@ matching exactly what each module's README promises as its "Output"/"Handoff".
 |---|---|---|---|---|
 | GET | `/recommendations/{user_id}` | — | `list[Recommendation]` | calls `backend/recommendations/` |
 | GET | `/export/{user_id}` | — | JSON credit profile | full `ScoreResult` + `ExplainResult` as downloadable JSON — satisfies "Export Options" |
-| POST | `/target-achievement` | `{user_id, target_product_id}` | counterfactual suggestion | calls `backend/ml_engine/` Case 3 (stretch) |
-| POST | `/offers/{offer_id}/accept` | — | bank disbursal result | calls `backend/bank_integration_mock/` (stretch) |
-| POST | `/auth/register` | `{username, password, role}` | `{user_id}` | for new user onboarding |
 
 ## Use the shared schemas — do not redefine response shapes
 Every request/response body in this API must be typed using classes from

@@ -14,6 +14,32 @@ key in your own module's dict and hope it lines up.
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from datetime import date
+from enum import Enum
+
+
+# ---------- Enums ----------
+
+class TransactionType(str, Enum):
+    DEBIT = "Debit"
+    CREDIT = "Credit"
+
+
+class RiskCategory(str, Enum):
+    POOR = "Poor"
+    FAIR = "Fair"
+    GOOD = "Good"
+    EXCELLENT = "Excellent"
+
+
+class FactorDirection(str, Enum):
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+
+
+class Priority(str, Enum):
+    MUST_HAVE = "must_have"
+    GOOD_TO_HAVE = "good_to_have"
+    STRETCH = "stretch"
 
 
 # ---------- 1. Raw input schemas (owned by: data/) ----------

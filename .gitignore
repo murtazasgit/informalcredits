@@ -13,6 +13,9 @@ venv/
 *.db
 *.sqlite3
 
+# Local applicant dataset; publish only the synthetic demo set
+data/Datasets_AltCredit/
+
 # Node / React
 node_modules/
 dist/

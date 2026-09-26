@@ -5,36 +5,37 @@ Use this to sanity-check nothing was missed. ✅ = must-have, covered. 🟡 = go
 ## IV.1 Functional Requirements
 | Spec requirement | Covered in |
 |---|---|
-| Multi-source ingestion (Transactional CSV/JSON, Demographic JSON, Product Catalog JSON) | `data/README.md` |
-| Integrated scoring pipeline, feature engineering | `data/README.md` (features) + `backend/scoring_engine/README.md` (scoring) |
-| Full rule-based point table (all 12 sub-factors + bonus/penalty) | `backend/scoring_engine/README.md` |
-| Real-time Risk Dashboard | `frontend/user-dashboard/README.md` |
-| Explainability Module (Factor Analysis) | `backend/explainability/README.md` |
-| Automated Recommendation Engine | `backend/recommendations/README.md` |
-| "Connect to banking system via API" for pre-approved loan/card redemption (separate app + API key link) | 🟡 `backend/bank_integration_mock/README.md` |
-| Transparency Report (downloadable PDF, Accept/Reject) | `backend/reports/README.md` |
-| Business User Login (Lender Portal) | `backend/api/README.md` (auth) + `frontend/lender-portal/README.md` |
-| Candidate Search & filter (score range e.g. 650+) | `backend/api/README.md` (`/lender/candidates`) + `frontend/lender-portal/README.md` |
-| Anonymization until offer accepted | `backend/api/README.md` (`CandidateSummary` schema — no PII fields) |
-| Push offers / campaign (single + bulk) | `backend/api/README.md` (`/lender/offer`) + `frontend/lender-portal/README.md` |
+| Bundled dataset loading and feature engineering | `data/feature_engineering.py` |
+| Applicant CSV upload and row-by-row scoring | `POST /upload-csv` in `backend/api/main.py` |
+| Integrated rule-based scoring pipeline | `backend/scoring_engine/engine.py` + `backend/api/main.py` |
+| Rule table, sub-factors, bonus/penalty | `backend/scoring_engine/engine.py` |
+| User score dashboard | `frontend/user-dashboard/` |
+| Factor explanations | `backend/explainability/explainer.py` |
+| Product recommendations | `backend/recommendations/recommender.py` |
+| Bank integration | Not implemented |
+| PDF transparency report | Not implemented |
+| User authentication and lender UI | Not implemented |
+| Candidate search | Basic API endpoint: `GET /lender/candidates`; no lender UI or authentication |
+| Candidate anonymization | `backend/api/main.py` (`CandidateSummary`) |
+| Offer campaigns | Not implemented |
 
 ## IV.2 Testing & Quality Assurance
 | Spec requirement | Covered in |
 |---|---|
-| Data Object Validation vs. ground-truth dataset | `backend/testing/README.md` |
-| Integration Test (full flow: API → Dashboard) | `backend/testing/README.md` |
-| Robustness Test (missing data, no crash) | `backend/testing/README.md` |
+| Scoring/model regression tests | `backend/testing/test_mvp_models.py` |
+| Full API-to-dashboard integration tests | Not implemented |
+| Robustness tests for missing data | Not implemented |
 
 ## IV.3 Performance & Accuracy
 | Spec requirement | Covered in |
 |---|---|
-| End-to-end scoring latency < 15–30s | `backend/testing/README.md` (perf test) + noted in root `README.md` |
+| End-to-end scoring latency < 15–30s | Not measured yet |
 
 ## IV.4 Code Quality & Reproducibility
 | Spec requirement | Covered in |
 |---|---|
-| Modular architecture (Data / ML / API / Frontend separated) | Overall repo structure — see root `README.md` |
-| Single dependency manifest | `deployment/README.md` (`requirements.txt`) |
+| Modular architecture (Data / API / Frontend separated) | Repository structure — see root `README.md` |
+| Backend dependency manifest | Root `requirements.txt` |
 | Version control practices | `CONTRIBUTING.md` |
 | No hard-coded secrets | `CONTRIBUTING.md` §7, `.gitignore` |
 | Logging | `backend/api/README.md` (add basic `logging` calls — noted in tasks checklist) |
@@ -59,16 +60,14 @@ Use this to sanity-check nothing was missed. ✅ = must-have, covered. 🟡 = go
 | Consumer-centric, fintech-style UI | `frontend/user-dashboard/README.md` |
 | "What-If" Simulator | `backend/scoring_engine/README.md` (`simulate_change`) + `backend/api/README.md` (`/simulate`) |
 | 4 worked What-If examples (Saving Buffer, Utility Auto-pay, Discretionary Spike, Delinquency) | 🟡 `backend/scoring_engine/README.md` §What-If worked examples |
-| Case 1 — PD model (XGBoost, Score = 1000×(1-PD)) | 🟡 `backend/ml_engine/README.md` §Case 1 |
-| Case 2 — Propensity to Purchase model | 🟡 `backend/ml_engine/README.md` §Case 2 |
-| Case 3 — Counterfactual "Target Achievement" | 🟡 `backend/ml_engine/README.md` §Case 3 |
-| Export options (PDF + JSON credit profile) | `backend/reports/README.md` (PDF) + `backend/api/README.md` (`/export/{user_id}` JSON) |
+| PD, propensity, and counterfactual ML models | Not implemented |
+| Export options | JSON profile: `GET /export/{user_id}`; PDF not implemented |
 | API-first architecture | `backend/api/README.md` |
 | Self-contained SQLite store | `database/README.md` |
 | Synthetic-data-ready (no manual preprocessing) | `data/README.md` |
 | New User Login Portal (profile creation + upload CSV/PDF) | 🟡 `frontend/user-dashboard/README.md` §Onboarding |
 | OCR Integration (Tesseract, scan PDF bank statement) | 🟡 `data/README.md` §OCR |
-| Docker deployment | `deployment/README.md` |
+| Docker deployment | Not implemented |
 
 ## VIII. Input formats
 | Spec requirement | Covered in |
@@ -81,18 +80,12 @@ Use this to sanity-check nothing was missed. ✅ = must-have, covered. 🟡 = go
 | Spec requirement | Covered in |
 |---|---|
 | No real PII, synthetic only | Root `README.md` §6, reinforced in `data/README.md` and `backend/api/README.md` (anonymization) |
-| No deep-learning black boxes | Root `README.md` §6, `backend/ml_engine/README.md` (shallow models only) |
+| No deep-learning black boxes | Root `README.md` §6; current MVP uses rule-based scoring |
 | No external credit bureau APIs | Root `README.md` §6 |
-| No production-grade deployment needed | `deployment/README.md` (Docker Compose only, no k8s/HA) |
+| No production-grade deployment needed | Root `README.md` §6 |
 | No legal/compliance certification needed | Root `README.md` §6 |
 
 ---
-**Bottom line: every Must-Have requirement (IV.1 core flow, IV.2 testing, IV.3 latency, IV.4 code
-quality) has a dedicated file with working starter code. Every Good-to-Have (🟡) is scoped and
-documented so your team can pick them up only if time allows, in priority order:**
-1. What-If simulator worked examples (cheap, high demo value)
-2. Export JSON + OCR (medium effort, nice demo value)
-3. New User onboarding portal
-4. Case 1 (PD model) → Case 3 (counterfactual) → Case 2 (propensity) → bank integration mock
-   (in that order — each is progressively more effort for less judge-visible payoff under time
-   pressure)
+**Bottom line:** The runnable MVP covers rule-based scoring, explanations, recommendations, the
+dashboard, and what-if simulation. Items marked "Not implemented" are future work, not working
+starter modules.

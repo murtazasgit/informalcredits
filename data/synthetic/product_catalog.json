@@ -1,0 +1,51 @@
+[
+  {
+    "product_id": "P001",
+    "name": "Starter Credit Card",
+    "type": "Starter Card",
+    "min_score_required": 400,
+    "interest_rate": 28.0
+  },
+  {
+    "product_id": "P002",
+    "name": "Basic Microloan",
+    "type": "Microloan",
+    "min_score_required": 450,
+    "interest_rate": 22.0
+  },
+  {
+    "product_id": "P003",
+    "name": "Standard Credit Card",
+    "type": "Standard Card",
+    "min_score_required": 550,
+    "interest_rate": 18.0
+  },
+  {
+    "product_id": "P004",
+    "name": "Personal Loan",
+    "type": "Personal Loan",
+    "min_score_required": 600,
+    "interest_rate": 15.0
+  },
+  {
+    "product_id": "P005",
+    "name": "Gold Credit Card",
+    "type": "Gold Card",
+    "min_score_required": 700,
+    "interest_rate": 14.0
+  },
+  {
+    "product_id": "P006",
+    "name": "Premium Credit Card",
+    "type": "Premium Card",
+    "min_score_required": 800,
+    "interest_rate": 12.0
+  },
+  {
+    "product_id": "P007",
+    "name": "Home Loan (Pre-approved)",
+    "type": "Home Loan",
+    "min_score_required": 850,
+    "interest_rate": 8.5
+  }
+]

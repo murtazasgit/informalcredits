@@ -13,10 +13,9 @@ A platform that scores creditworthiness using non-traditional data (utility bill
 income, spending patterns) instead of traditional credit bureau history, and explains *why*
 every score was given.
 
-Two user modes:
-- **User Mode** — score dashboard, factor breakdown, product recommendations, "what-if"
-  simulator, PDF report, JSON export
-- **Business Mode (Lender Portal)** — banks/NBFCs search & filter candidates, push loan/card offers
+The current MVP accepts applicant CSVs and returns scores, factor explanations, product
+recommendations, and a "what-if" simulator. Lender tools, trained ML models, and PDF reports are
+future work.
 
 ## 2. Full repo structure — who owns what
 ```
@@ -25,18 +24,14 @@ altcredit/
 ├── data/                          → Data ingestion + synthetic data + OCR (stretch)      [Member 1]
 ├── backend/
 │   ├── scoring_engine/            → Rule-based point system + What-If simulator (MUST-HAVE, CORE) [Member 2]
-│   ├── ml_engine/                 → Case 1 (PD model), Case 2 (propensity), Case 3 (counterfactual) — stretch [Member 3]
-│   ├── explainability/            → SHAP + factor analysis                                [Member 3 or 4]
+│   ├── explainability/            → Deterministic factor analysis
 │   ├── recommendations/           → Product recommendation engine                         [Member 4]
-│   ├── reports/                   → PDF Transparency Report + JSON export                 [Member 4]
-│   ├── bank_integration_mock/     → Mock bank API (separate service) — stretch            [Member 4 or 5]
-│   ├── testing/                   → pytest: unit, integration, robustness, latency tests   [Member 5]
-│   └── api/                       → FastAPI integration hub, auth, all endpoints          [Member 5]
+│   ├── testing/                   → MVP regression tests                                  [Member 5]
+│   └── api/                       → FastAPI endpoints for the MVP core flow
 ├── frontend/
-│   ├── user-dashboard/            → Score dashboard + onboarding portal (stretch)          [Member 6]
-│   └── lender-portal/             → Business user UI                                      [Member 7]
+│   └── user-dashboard/            → Score dashboard + what-if simulator
 ├── database/                      → SQLite schema
-├── deployment/                    → Docker Compose, Dockerfiles, requirements.txt
+├── requirements.txt               → Backend dependencies
 ├── docs/ARCHITECTURE.md           → Full end-to-end data flow, exact payloads at every step
 ├── CONTRIBUTING.md                → Git workflow + merge-conflict prevention rules
 ├── REQUIREMENTS_COVERAGE.md       → Every spec line ↔ file traceability matrix
@@ -51,15 +46,13 @@ nobody invents their own field names.
 |---|---|---|
 | Backend/API | **FastAPI** | Async, auto-generated `/docs`, Pydantic validation matches our JSON input schemas |
 | Core scoring | **Plain Python (rule engine)** | Deterministic, auditable, satisfies "no black-box" guardrail, zero training time needed |
-| ML (stretch) | **XGBoost / scikit-learn** | Fast to train on synthetic data, interpretable, industry-standard for tabular PD models |
-| Explainability | **SHAP** | Ready-made factor-attribution values, works with tree models and the rule engine's own breakdown |
+| ML (future) | Not included in the MVP | Current scores use the deterministic rule-based engine |
+| Explainability | Plain Python | Deterministic factor attribution from the score breakdown |
 | Database | **SQLite + SQLAlchemy** | Zero setup — judges can clone & run instantly; ORM makes swapping to Postgres trivial |
 | Frontend | **React + Tailwind + Recharts** | Most common stack among students; fast to build a clean fintech-style dashboard |
-| PDF reports | **WeasyPrint** | Write an HTML/CSS template → PDF, no complex drawing code |
-| Auth | **FastAPI-Users / python-jose (JWT)** | Don't hand-roll auth; battle-tested, minimal setup |
-| Testing | **pytest** | Standard, minimal setup for unit + integration + robustness tests |
+| PDF reports and authentication | Future work | Not implemented in the current MVP |
+| Testing | **pytest** | Regression coverage for the MVP model flow |
 | OCR (stretch) | **Tesseract / pytesseract** | Free, well-documented, good enough for clean synthetic PDF statements |
-| Deployment | **Docker Compose** | One command to run everything, satisfies "reproducible build" requirement |
 
 ## 4. High-level data flow
 ```
@@ -70,9 +63,6 @@ Raw CSV/JSON (transactions, demographics, product catalog)
         │
         ▼
   [backend/scoring_engine/] rule-based score (0–1000)  →  ScoreResult
-        │ (optional, parallel path)
-        ▼
-  [backend/ml_engine/] XGBoost → PD → Score = 1000×(1-PD)
         │
         ▼
   [backend/explainability/] factor breakdown → ExplainResult
@@ -83,20 +73,27 @@ Raw CSV/JSON (transactions, demographics, product catalog)
         ▼
   [backend/api/] stores in SQLite, exposes REST endpoints
         │
-        ├──▶ [frontend/user-dashboard/] score, factors, recommendations, what-if simulator, report
-        ├──▶ [backend/reports/] downloadable PDF + JSON export
-        ├──▶ [backend/bank_integration_mock/] disburse pre-approved offer (stretch)
-        └──▶ [frontend/lender-portal/] anonymized candidate search + offer push
+      └──▶ [frontend/user-dashboard/] upload CSV, review scores, factors, recommendations
 ```
 See `docs/ARCHITECTURE.md` for the fully detailed version with exact JSON payloads at each arrow.
 
-## 5. How to run (once each part is built)
-```bash
-cp .env.example .env   # set BANK_API_KEY
-docker compose up --build
-# backend  → http://localhost:8000/docs
-# bank mock (stretch) → http://localhost:9000
-# frontend → http://localhost:3000
+## 5. How to run
+In PowerShell, from the project root, start the backend:
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m uvicorn backend.api.main:app --reload
+```
+
+In a second terminal, start the dashboard:
+```powershell
+cd frontend/user-dashboard
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000` for the dashboard or `http://localhost:8000/docs` for the API.
 ```
 
 ## 6. Guardrails (don't break these)
@@ -107,13 +104,9 @@ docker compose up --build
 - No legal/compliance certification implied — this is a demo, not a real credit decision
 
 ## 7. Priority order if time runs out
-1. **Must-have** (do these first, in this order): `data/` → `scoring_engine/` → `database/` →
-   `api/` (core endpoints) → `frontend/user-dashboard/` (basic) → `explainability/` →
-   `reports/` (PDF) → `backend/testing/`
-2. **Then Business Mode**: `frontend/lender-portal/` + lender endpoints in `api/`
-3. **Then stretch, in this order**: What-If simulator worked examples → `recommendations/`
-   dynamic mapping → JSON export → onboarding portal → OCR → Case 1 (PD model) → Case 3
-   (counterfactual) → Case 2 (propensity) → `bank_integration_mock/`
+1. **MVP**: bundled data or applicant CSV → rule-based score → explanation and recommendations
+      → dashboard and what-if simulation. The API also exposes JSON profile export and candidate search.
+2. **Future work**: user authentication, transaction uploads, lender UI and offers, PDF reports,
+      trained ML models, bank integration, and Docker deployment.
 
-See `REQUIREMENTS_COVERAGE.md` for the full traceability matrix confirming nothing from the
-spec is missing.
+See `REQUIREMENTS_COVERAGE.md` for implemented MVP features and outstanding requirements.

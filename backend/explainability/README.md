@@ -7,15 +7,14 @@ Turn a score breakdown into human-readable "why" statements — this satisfies t
 ## Tech stack
 - **Rule-based path**: no library needed — the breakdown dict from `scoring_engine` already IS
   the explanation, just format it into sentences
-- **ML path (if `ml_engine` is built)**: **SHAP** (`shap.TreeExplainer` for XGBoost) to get per-feature
-  contribution values
+- **Future model path**: SHAP can be added if a trained ML model is introduced.
 
 ## Input
 
 ### From rule-based engine
 The `breakdown` dict from `backend/scoring_engine/compute_score()`.
 
-### From ML engine (if used)
+### Optional future model input
 ```python
 import shap
 explainer = shap.TreeExplainer(model)
@@ -76,7 +75,7 @@ def generate_summary(factors: list) -> str:
 - [ ] Build the label-mapping dict for every scoring sub-factor
 - [ ] Implement `explain_breakdown()` (sorts factors by impact, tags positive/negative)
 - [ ] Implement `generate_summary()` for the plain-English summary sentence
-- [ ] (Stretch) Wire up SHAP if `ml_engine` is used
+- [ ] (Future) Add SHAP if a trained ML model is introduced
 
 ## Handoff
-Expose `explain_breakdown(breakdown: dict) -> list` for `backend/api/` and `backend/reports/`.
+Expose `explain_breakdown(breakdown: ScoreBreakdown) -> ExplainResult` for `backend/api/`.

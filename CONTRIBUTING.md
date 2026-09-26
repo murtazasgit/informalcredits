@@ -7,17 +7,12 @@ Read this once as a team before anyone starts coding (10 minutes, saves hours la
 |---|---|---|
 | `data/` | ___ | `common/` |
 | `backend/scoring_engine/` | ___ | `common/`, `data/` output |
-| `backend/ml_engine/` (stretch) | ___ | `common/`, `data/` output |
 | `backend/explainability/` | ___ | `common/`, `scoring_engine/` output |
 | `backend/recommendations/` | ___ | `common/`, `scoring_engine/` output |
-| `backend/reports/` | ___ | `common/`, `explainability/` output |
-| `backend/bank_integration_mock/` (stretch) | ___ | `common/` |
 | `backend/testing/` | ___ | everything above (writes tests against contracts) |
-| `backend/api/` | ___ | imports every backend module |
+| `backend/api/` | ___ | imports implemented core modules |
 | `database/` | ___ | `common/` |
 | `frontend/user-dashboard/` | ___ | `backend/api/` endpoints |
-| `frontend/lender-portal/` | ___ | `backend/api/` endpoints |
-| `deployment/` | whoever finishes first | everything |
 
 **Because folders don't overlap, two people editing at once almost never touch the same file.**
 The only shared files are `common/schemas.py` and `backend/api/main.py` — treat those two as

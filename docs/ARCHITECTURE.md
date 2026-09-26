@@ -19,41 +19,32 @@ This traces one user's data through the entire system, exact payload at each ste
           delinquency_flags }
         │
         ▼
-3a. RULE-BASED SCORING  [backend/scoring_engine/]        3b. ML SCORING (optional)  [backend/ml_engine/]
-    IN:  feature dict                                        IN:  same feature dict
-    OUT: { user_id, total_score, risk_category, breakdown }  OUT: { user_id, probability_of_default, score }
-        │                                                        │
-        └───────────────────────┬────────────────────────────────┘
-                                 ▼
+3. RULE-BASED SCORING  [backend/scoring_engine/]
+   IN:  feature dict
+   OUT: { user_id, total_score, risk_category, breakdown }
+                │
+                ▼
 4. EXPLAINABILITY  [backend/explainability/]
-   IN:  breakdown dict (or SHAP values if ML path used)
+        IN:  score breakdown
    OUT: { user_id, factors: [{label, points, direction}], summary_text }
         │
         ▼
 5. PERSISTENCE  [database/]
    Score + breakdown + factors saved to `scores` table, keyed by user_id + timestamp
         │
-        ├──────────────────────────────┬─────────────────────────────┐
-        ▼                              ▼                             ▼
-6a. USER DASHBOARD API           6b. REPORT GENERATION         6c. LENDER PORTAL API
-    [backend/api/]                   [backend/reports/]            [backend/api/]
-    GET /score/{user_id}             IN: score+factors+decision     GET /lender/candidates
-    GET /explain/{user_id}           OUT: report_{user_id}.pdf      (anonymized: candidate_ref,
-    POST /simulate                                                  score, risk_category — NO
-        │                                                            name/address/phone)
-        ▼                                                                  │
-7a. USER DASHBOARD UI                                              7b. LENDER PORTAL UI
-    [frontend/user-dashboard/]                                         [frontend/lender-portal/]
-    Renders: ScoreGauge, FactorBreakdownChart,                         Renders: candidate search/filter,
-    RecommendationCards, WhatIfSimulator, ReportButton                 "Push Offer" action
-                                                                              │
-                                                                              ▼
-                                                                  8. OFFER PUSHED
-                                                                     POST /lender/offer →
-                                                                     appears on user's dashboard
-                                                                     (7a) as a recommendation;
-                                                                     PII revealed only after
-                                                                     user accepts
+        ▼
+6. USER DASHBOARD API  [backend/api/]
+   GET /dashboard/{user_id}
+   GET /score/{user_id}
+   GET /explain/{user_id}
+   GET /recommendations/{user_id}
+   POST /simulate
+        │
+        ▼
+7. USER DASHBOARD UI  [frontend/user-dashboard/]
+   Renders score, factor explanation, recommendations, and what-if simulation.
+
+Lender UI, ML scoring, PDF reports, and bank integration are not included in the MVP.
 ```
 
 ## What-If Simulator flow (detail)

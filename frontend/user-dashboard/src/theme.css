@@ -1,0 +1,232 @@
+/* ==========================================================================
+   AltCredit theme — modern banking-app look (soft blue-grey canvas, white rounded cards,
+   dark navy pill buttons, inset field tiles, big bold numerals).
+   Loaded LAST (main.jsx), so it re-skins every screen without touching behaviour.
+   ========================================================================== */
+
+:root {
+  --color-bg: #e3e7f1;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f2f4f9;
+  --color-border: #e4e8f1;
+  --color-border-light: #eef0f6;
+
+  --color-text-primary: #1b1f2e;
+  --color-text-secondary: #565d73;
+  --color-text-muted: #8a90a6;
+
+  --color-brand: #20242f;
+  --color-brand-light: #e9ecf4;
+  --color-brand-dark: #0f1220;
+
+  --color-excellent: #0f9f6e;
+  --color-excellent-bg: #e3f6ee;
+  --color-good: #3b5bdb;
+  --color-good-bg: #e6ebfc;
+  --color-fair: #d9822b;
+  --color-fair-bg: #fdf0dc;
+  --color-poor: #d64545;
+  --color-poor-bg: #fbe5e5;
+
+  --shadow-sm: 0 1px 2px rgba(31, 38, 64, .05);
+  --shadow-md: 0 6px 20px rgba(31, 38, 64, .07);
+  --shadow-lg: 0 12px 36px rgba(31, 38, 64, .10);
+
+  --radius-sm: 14px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
+  --pill: 999px;
+  --tile: #f2f4f9;
+}
+
+body {
+  background: linear-gradient(180deg, #dfe4f0 0%, #e8ebf3 60%, #e3e7f1 100%) fixed;
+  color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+}
+
+h1, h2, h3 { letter-spacing: -0.02em; color: var(--color-text-primary); }
+
+/* ---------- layout & top bar ---------- */
+.main-content { max-width: 1180px; margin: 0 auto; padding: 28px 24px 56px; }
+
+.navbar {
+  position: sticky; top: 0; z-index: 50; margin: 0; height: 68px; padding: 0 max(24px, calc((100% - 1180px) / 2 + 24px));
+  border: none; border-radius: 0; box-shadow: none;
+  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+}
+.navbar-brand { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 19px; font-weight: 800; letter-spacing: -0.03em; }
+.navbar-brand .logo-icon { width: 34px; height: 34px; border-radius: 11px; background: var(--color-brand); }
+
+.nav-links { justify-content: center; gap: 4px; padding: 4px; border-radius: var(--pill); background: rgba(255,255,255,.7); }
+.nav-btn { border-radius: var(--pill); }
+.nav-btn { font-size: 14px; padding: 9px 18px; color: var(--color-text-secondary); }
+.nav-btn:hover { background: var(--tile); color: var(--color-text-primary); }
+.nav-btn.active { background: var(--color-brand); color: #fff; box-shadow: none; }
+
+.user-chip { display: flex; align-items: center; gap: 10px; padding: 5px 14px 5px 5px; background: #fff; border: none; border-radius: var(--pill); box-shadow: var(--shadow-sm); }
+.user-avatar { width: 34px; height: 34px; font-size: 14px; }
+.user-chip .user-meta { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 1px; line-height: 1.15; }
+.user-chip .user-meta strong { font-size: 13px; color: var(--color-text-primary); }
+.user-chip .user-meta small { font-size: 11px; color: var(--color-text-muted); }
+.user-avatar { background: var(--color-brand); }
+.logout-btn { border: none; background: #fff; box-shadow: var(--shadow-sm); color: var(--color-text-primary); }
+.logout-btn:hover { background: var(--color-brand); color: #fff; }
+
+/* ---------- cards / panels ---------- */
+.card, .detail-panel, .action-card, .action-empty, .stat-card, .results-table-wrap, .lender-table,
+.results-empty, .row-errors, .upload-dropzone, .hub, .feature-details, .ml-explanation, .lender-filters, .lender-push {
+  background: #fff; border: none; border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+}
+.lender-table { overflow: hidden; }
+.detail-panel { padding: 24px; }
+.detail-page, .lender-page, .results-page, .upload-page { max-width: none; }
+.detail-grid { gap: 16px; }
+.detail-section { margin-top: 28px; }
+
+/* engineered feature values: padded card with a tile grid */
+.feature-details { padding: 8px 24px; border-top: none; border-bottom: none; }
+.feature-details summary { padding: 16px 0; font-size: 15px; font-weight: 700; color: var(--color-text-primary); }
+.feature-details[open] summary { margin-bottom: 4px; }
+.feature-details dl { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; padding: 4px 0 20px; }
+.feature-details dl > div {
+  flex-direction: column; justify-content: flex-start; gap: 4px;
+  padding: 14px 16px; border: none; border-radius: var(--radius-sm); background: var(--tile);
+}
+.feature-details dt { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--color-text-muted); }
+.feature-details dd { max-width: none; text-align: left; font-size: 18px; font-weight: 700; color: var(--color-text-primary); }
+
+.detail-heading h1, .results-heading h1, .upload-heading h1 { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; }
+.upload-kicker { display: inline-block; padding: 5px 12px; border-radius: var(--pill); background: #fff; color: var(--color-text-secondary); font-size: 11px; font-weight: 700; letter-spacing: .08em; box-shadow: var(--shadow-sm); }
+
+/* ---------- score hero (the "total balance" card) ---------- */
+.score-hero {
+  display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; align-items: center;
+  padding: 32px 36px; margin-bottom: 8px; border-radius: var(--radius-xl); color: #fff;
+  background: radial-gradient(120% 140% at 100% 0%, #3a4262 0%, #20242f 55%, #171a24 100%);
+  box-shadow: var(--shadow-lg);
+}
+.score-hero .upload-kicker { background: rgba(255, 255, 255, .12); color: rgba(255, 255, 255, .85); box-shadow: none; }
+.score-hero-label { margin-top: 14px; font-size: 14px; color: rgba(255, 255, 255, .65); }
+.score-hero-num { font-size: 76px; line-height: 1.05; font-weight: 800; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+.score-hero-num small { font-size: 20px; font-weight: 500; color: rgba(255, 255, 255, .55); margin-left: 8px; letter-spacing: 0; }
+.score-hero p { max-width: 560px; margin-top: 12px; font-size: 15px; line-height: 1.6; color: rgba(255, 255, 255, .78); }
+.score-hero .risk-pill { margin-top: 6px; font-size: 13px; padding: 5px 14px; }
+.score-hero-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.score-hero .offer-button { background: #fff; color: var(--color-brand); }
+.score-hero .offer-button:hover:not(:disabled) { background: #eef0f7; }
+.score-hero .offer-error { color: #ffb3b3; }
+
+/* ---------- buttons ---------- */
+.offer-button, .upload-button, .btn-primary, .au-btn {
+  background: var(--color-brand); color: #fff; border: none; border-radius: var(--pill); font-weight: 600;
+  min-height: 44px; padding: 0 22px; cursor: pointer; transition: background .15s, transform .1s;
+}
+.offer-button:hover:not(:disabled), .upload-button:hover:not(:disabled), .btn-primary:hover:not(:disabled), .au-btn:hover { background: #343a4d; }
+.offer-button:active, .upload-button:active, .au-btn:active { transform: scale(.98); }
+.offer-button:disabled, .au-btn:disabled { background: #c9cede; color: #fff; }
+.back-button, .template-button, .row-action, .btn-outline {
+  background: var(--tile); color: var(--color-text-primary); border: none; border-radius: var(--pill);
+  font-weight: 600; min-height: 40px; padding: 0 18px; cursor: pointer; transition: background .15s;
+}
+.back-button:hover, .template-button:hover, .row-action:hover, .btn-outline:hover { background: #e4e8f2; }
+
+/* ---------- fields: inset tiles ---------- */
+input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea {
+  background: var(--tile); border: 1.5px solid transparent; border-radius: var(--radius-sm);
+  color: var(--color-text-primary); font-family: inherit;
+}
+input:not([type=checkbox]):not([type=radio]):not([type=file]):focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--color-brand); background: #fff; box-shadow: 0 0 0 4px rgba(32, 36, 47, .08);
+}
+.lender-login label, .lender-filters label, .lender-push label { font-weight: 600; color: var(--color-text-secondary); }
+
+/* ---------- tabs: segmented pill ---------- */
+.detail-tabs { display: inline-flex; gap: 4px; margin: 22px 0; padding: 5px; background: #fff; border: none; border-radius: var(--pill); box-shadow: var(--shadow-md); flex-wrap: wrap; }
+.detail-tabs button { border: none; border-radius: var(--pill); padding: 10px 20px; font-family: inherit; font-weight: 600; font-size: 14px; color: var(--color-text-secondary); transition: background .15s, color .15s; }
+.detail-tabs button:hover { background: var(--tile); }
+.detail-tabs button.active { background: var(--color-brand); color: #fff; }
+
+/* ---------- product "cards" ---------- */
+.recommendations-grid { gap: 16px; }
+.product-card { border: none; border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-md); padding: 22px; }
+.product-card.eligible { background: linear-gradient(160deg, #fff 60%, #eaf7f1 100%); }
+.product-card.ineligible { background: #f7f8fb; box-shadow: none; }
+.product-card .product-rate { font-size: 34px; font-weight: 800; letter-spacing: -0.03em; }
+.product-card .eligibility-tag { border-radius: var(--pill); padding: 4px 12px; font-size: 12px; font-weight: 700; }
+
+/* ---------- action cards ---------- */
+.action-card { padding: 20px; }
+.action-card-gain { display: inline-block; padding: 3px 12px; border-radius: var(--pill); background: var(--color-excellent-bg); }
+
+/* ---------- tables ---------- */
+.results-table th, .lender-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--color-text-muted); background: #fafbfd; }
+.results-table tbody tr:hover, .lender-table tbody tr:hover { background: #f7f8fc; }
+.risk-pill, .lender-tier { border-radius: var(--pill); font-weight: 700; }
+.lender-link { color: var(--color-brand); font-weight: 700; }
+
+/* ---------- misc ---------- */
+.offer-result { border-radius: var(--radius-sm); }
+.offer-error { color: var(--color-poor); font-weight: 500; }
+.detail-warnings { border-radius: var(--radius-md); }
+.factor-item { border-radius: var(--radius-sm); }
+.upload-dropzone { border: 2px dashed #ccd2e3; box-shadow: none; background: rgba(255, 255, 255, .7); }
+.xai-headline { border: none; border-left: none; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.xai-item { border-radius: var(--radius-sm); }
+
+/* ---------- sign-in / register: same language ---------- */
+.au-layout {
+  --au-navy: #20242f; --au-blue: #20242f; --au-blue-lt: #3a4054; --au-mist: #e3e7f1; --au-border: #e4e8f1;
+  --au-radius: 16px; background: linear-gradient(180deg, #dfe4f0, #e8ebf3);
+}
+.au-panel-left { background: radial-gradient(120% 90% at 0% 0%, #3a4262 0%, #20242f 55%, #171a24 100%); margin: 16px 0 16px 16px; border-radius: var(--radius-xl); }
+.au-card { border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); }
+.au-tabs { background: var(--tile); border-radius: var(--pill); }
+.au-tab { border-radius: var(--pill); }
+.au-tab.active { color: var(--color-text-primary); }
+.au-field input { background: var(--tile); border: 1.5px solid transparent; }
+.au-field input:focus { background: #fff; border-color: var(--color-brand); box-shadow: 0 0 0 4px rgba(32, 36, 47, .08); }
+.au-role-btn { border-radius: var(--radius-md); border: 1.5px solid transparent; background: var(--tile); }
+.au-role-btn.selected { border-color: var(--color-brand); background: #fff; }
+.au-role-btn.selected .lbl { color: var(--color-text-primary); }
+.au-btn { border-radius: var(--pill); }
+.au-foot button { color: var(--color-text-primary); font-weight: 700; text-decoration: underline; }
+.au-card .data-files .back-button { background: var(--tile); border: none; color: var(--color-text-primary); }
+
+/* ---------- small screens: bottom navigation like a mobile banking app ---------- */
+@media (max-width: 768px) {
+  body { padding-bottom: 92px; }
+  .navbar { margin: 0; top: 0; height: 58px; padding: 0 14px; }
+  .main-content { padding: 20px 14px 40px; }
+  .nav-links {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; margin: 0; z-index: 200; flex-wrap: nowrap;
+    padding: 8px; gap: 4px; justify-content: space-around; background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  }
+  .nav-btn { flex: 1; padding: 10px 2px; font-size: 11px; border-radius: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .score-hero { padding: 24px; }
+  .score-hero-num { font-size: 56px; }
+  .au-panel-left { display: none; }
+}
+
+/* ---------- dashboard: offers + update-data cards under the score hero ---------- */
+.dash-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0 4px; align-items: start; }
+.dash-card { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); padding: 22px 24px; }
+.dash-card-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.dash-card h2 { font-size: 17px; margin: 0 0 2px; }
+.dash-card p { font-size: 13px; color: var(--color-text-secondary); margin: 0; }
+.dash-card .recommendations-grid { margin-top: 14px; grid-template-columns: 1fr; }
+@media (max-width: 860px) { .dash-top { grid-template-columns: 1fr; } }
+
+/* ---------- sign-in: single centred card ---------- */
+.au-layout { justify-content: center; }
+.au-panel-right { flex-direction: column; gap: 22px; flex: 1; }
+.au-brand-top { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 800; letter-spacing: -0.03em; color: var(--color-text-primary); }
+.au-logo { width: 38px; height: 38px; border-radius: 12px; background: var(--color-brand); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.au-card { max-width: 440px; padding: 36px 40px; }
+.au-segment { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 22px; background: var(--tile); border-radius: var(--pill); }
+.au-segment button { padding: 9px; border: none; border-radius: var(--pill); background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--color-text-secondary); cursor: pointer; transition: background .15s, color .15s; }
+.au-segment button.selected { background: var(--color-brand); color: #fff; }
+@media (max-width: 768px) { .au-card { padding: 28px 22px; } }
+.navbar-right { margin-left: auto; }

@@ -1,42 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import LenderCandidateDetail from './LenderCandidateDetail'
+import AuthScreen from '../components/AuthScreen'
+import { loadLenderBank, loadLenderToken, saveLenderSession, saveSession } from '../auth'
 import '../components/mvp.css'
 
 const API = '/api'
-const TOKEN_KEY = 'altcredit_lender_token'
-
-const readToken = () => { try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null } }
-const saveToken = (t) => { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY) } catch { /* ignore */ } }
-
-function Login({ onLoggedIn }) {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState(null)
-
-  const submit = async (e) => {
-    e.preventDefault()
-    setError(null)
-    const res = await fetch(`${API}/lender/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: username.trim(), password: password.trim() }),
-    })
-    if (!res.ok) { setError('Invalid credentials'); return }
-    const { token } = await res.json()
-    saveToken(token)
-    onLoggedIn(token)
-  }
-
-  return (
-    <form className="lender-login detail-panel" onSubmit={submit}>
-      <div className="upload-kicker">LENDER PORTAL</div>
-      <h1>Business sign-in</h1>
-      <label>Username<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required /></label>
-      <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /></label>
-      {error && <div className="offer-error" role="alert">{error}</div>}
-      <button type="submit" className="offer-button">Sign in</button>
-    </form>
-  )
-}
+const saveToken = (t) => saveLenderSession(t)
 
 function Portal({ token, onLogout }) {
   const auth = { Authorization: `Bearer ${token}` }
@@ -44,6 +13,7 @@ function Portal({ token, onLogout }) {
   const [tier, setTier] = useState('')
   const [candidates, setCandidates] = useState([])
   const [offers, setOffers] = useState([])
+  const [applications, setApplications] = useState([])
   const [products, setProducts] = useState([])
   const [productId, setProductId] = useState('')
   const [message, setMessage] = useState('')
@@ -61,9 +31,11 @@ function Portal({ token, onLogout }) {
   const load = useCallback(async () => {
     const q = new URLSearchParams({ min_score: minScore })
     if (tier) q.set('city_tier', tier)
-    const [c, o] = await Promise.all([guarded(`/lender/candidates?${q}`), guarded('/lender/offers')])
+    const [c, o, a] = await Promise.all([guarded(`/lender/candidates?${q}`), guarded('/lender/offers'), guarded('/lender/applications')])
     setCandidates(await c.json())
-    setOffers(await o.json())
+    const byUser = (x, y) => x.user_id.localeCompare(y.user_id)
+    setOffers((await o.json()).sort(byUser))
+    setApplications((await a.json()).sort(byUser))
     setSelected(new Set())
   }, [guarded, minScore, tier])
 
@@ -86,6 +58,15 @@ function Portal({ token, onLogout }) {
     load()
   }
 
+  const decide = async (id, decision) => {
+    const note = decision === 'decline' ? (window.prompt('Reason for declining (optional):') ?? '') : ''
+    const res = await guarded(`/lender/applications/${id}/decision`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, note }),
+    })
+    if (!res.ok) setNotice((await res.json().catch(() => ({}))).detail || 'Could not save the decision')
+    load()
+  }
+
   const reveal = async (ref) => {
     const res = await guarded(`/lender/candidates/${encodeURIComponent(ref)}`)
     const d = await res.json()
@@ -104,8 +85,35 @@ function Portal({ token, onLogout }) {
           <h1>Candidates</h1>
           <p>Click a user ID to see their full score analysis. Name, phone and address are released only after a candidate accepts your offer.</p>
         </div>
-        <button className="back-button" type="button" onClick={() => { saveToken(null); onLogout() }}>Sign out</button>
       </header>
+
+      <section className="dash-card" style={{ margin: '20px 0' }}>
+      <h2>Loan applications ({applications.length})</h2>
+      <p>Borrowers who chose your bank on “Get loan approval”. Their contact details were given to you in the application.</p>
+      {applications.length === 0 ? <p style={{ marginTop: 10 }}>No applications yet.</p> : (
+        <table className="lender-table" style={{ marginTop: 14, boxShadow: 'none' }}>
+          <thead><tr><th>#</th><th>Applicant</th><th>Contact</th><th>Score</th><th>Product</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {applications.map(a => (
+              <tr key={a.application_id}>
+                <td>{a.application_id}</td>
+                <td><button type="button" className="lender-link" onClick={() => setInspect(a.user_id)}>{a.user_id}</button><div>{a.applicant_name}</div></td>
+                <td>{a.phone}</td>
+                <td>{a.current_score ?? a.score_at_submit}</td>
+                <td>{a.product_name}</td>
+                <td>₹{Number(a.requested_amount).toLocaleString()} / {a.tenure_months} mo{a.purpose ? <div>{a.purpose}</div> : null}</td>
+                <td>{a.status}</td>
+                <td>{a.status === 'submitted' && (
+                  <span style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="offer-button" onClick={() => decide(a.application_id, 'approve')}>Approve</button>
+                    <button type="button" className="back-button" onClick={() => decide(a.application_id, 'decline')}>Decline</button>
+                  </span>)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      </section>
 
       <div className="lender-filters detail-panel">
         <label>Minimum score
@@ -169,16 +177,30 @@ function Portal({ token, onLogout }) {
 }
 
 export default function LenderPortal() {
-  const [token, setToken] = useState(readToken())
+  const [token, setToken] = useState(loadLenderToken())
+  const logout = () => { saveLenderSession(null); setToken(null) }
+  if (!token) return <AuthScreen apiBase={API} initialRole="lender" onLenderAuth={setToken} onBorrowerAuth={(session) => { saveSession(session); window.location.hash = '#/' }} />
+  const bank = loadLenderBank()
   return (
     <div className="app">
       <nav className="navbar">
-        <a className="navbar-brand" href="#/"><span>AltCredit</span></a>
-        <div className="navbar-center"><span className="breadcrumb-item active">Lender portal</span></div>
-        <div className="navbar-right"><a className="api-badge" href="#/">Consumer app</a></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span className="navbar-brand" aria-label="Lender portal">
+          <span className="logo-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </span>
+        </span>
+        <div className="user-chip" title="Signed in">
+          <span className="user-avatar">{(bank || 'L').slice(0, 1).toUpperCase()}</span>
+          <span className="user-meta"><strong>{bank || 'Lender'}</strong><small>Lender</small></span>
+        </div>
+        </div>
+        <button type="button" className="logout-btn" onClick={logout}>Log out</button>
       </nav>
       <main className="main-content">
-        {token ? <Portal token={token} onLogout={() => setToken(null)} /> : <Login onLoggedIn={setToken} />}
+        <Portal token={token} onLogout={() => setToken(null)} />
       </main>
     </div>
   )

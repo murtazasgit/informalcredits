@@ -196,11 +196,25 @@ class LenderLoginRequest(BaseModel):
     password: str
 
 
-# ---------- 8. Bank partner API (api/ -> bank-partner-api/) ----------
+# ---------- 8. Lender registration and pre-approval applications ----------
 
-class PreapproveRequest(BaseModel):
-    """Consumer app -> /offers/preapprove. Give a dataset `user_id` OR the `features` from a
-    scored CSV result (the score is always recomputed server-side, never trusted from the client)."""
+class LenderRegisterRequest(BaseModel):
+    bank_name: str
+    username: str
+    password: str
+
+
+class ApplicationRequest(BaseModel):
+    """Consumer -> a chosen lender. The score is always read server-side, never taken from the client."""
+    lender_id: str
     product_id: str
-    user_id: Optional[str] = None
-    features: Optional[dict] = None
+    requested_amount: float
+    tenure_months: int
+    purpose: str = ""
+    full_name: str
+    phone: str
+
+
+class ApplicationDecision(BaseModel):
+    decision: str   # "approve" | "decline"
+    note: str = ""

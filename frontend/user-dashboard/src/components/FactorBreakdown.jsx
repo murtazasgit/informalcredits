@@ -46,7 +46,7 @@ export default function FactorBreakdown({ explanation }) {
             <div className="factor-info">
               <div className="factor-label">
                 {factor.label}
-                <span className="factor-detail"> — {describe(factor, maxPts)}</span>
+                <span className="factor-detail"> Â· {describe(factor, maxPts)}</span>
               </div>
               <div className="factor-bar">
                 <div

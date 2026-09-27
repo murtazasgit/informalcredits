@@ -1,0 +1,71 @@
+/* Sign-in / create-account screen: two-panel layout. Everything is prefixed `au-` so it can't leak into the dashboard. */
+.au-layout {
+  --au-navy: #0B1F3A; --au-blue: #1A4DB3; --au-blue-lt: #2D6AE0; --au-green: #00C48C; --au-red: #E03E3E;
+  --au-slate: #4A5568; --au-mist: #F0F4FA; --au-border: #D6E0F0; --au-radius: 12px;
+  display: flex; width: 100%; min-height: 100vh; background: var(--au-mist);
+  font-family: 'Inter', sans-serif; color: var(--au-navy);
+}
+.au-panel-left {
+  width: 44%; background: var(--au-navy); display: flex; flex-direction: column; justify-content: space-between;
+  padding: 48px 52px; position: relative; overflow: hidden;
+}
+.au-panel-left::before, .au-panel-left::after { content: ''; position: absolute; pointer-events: none; }
+.au-panel-left::before { width: 420px; height: 420px; background: radial-gradient(circle, rgba(45,106,224,.35) 0%, transparent 70%); top: -80px; right: -100px; }
+.au-panel-left::after { width: 320px; height: 320px; background: radial-gradient(circle, rgba(0,196,140,.18) 0%, transparent 70%); bottom: 60px; left: -60px; }
+.au-brand { display: flex; align-items: center; gap: 12px; z-index: 1; }
+.au-brand-icon { width: 42px; height: 42px; background: var(--au-green); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.au-brand-name { font-family: 'DM Serif Display', serif; font-size: 22px; color: #fff; letter-spacing: -.3px; }
+.au-left-body { z-index: 1; }
+.au-left-body h1 { font-family: 'DM Serif Display', serif; font-size: 38px; line-height: 1.18; color: #fff; margin-bottom: 20px; font-weight: 400; }
+.au-left-body h1 span { color: var(--au-green); }
+.au-left-body p { font-size: 15px; color: rgba(255,255,255,.65); line-height: 1.7; max-width: 340px; margin-bottom: 36px; }
+.au-badge { display: inline-flex; align-items: center; gap: 10px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 40px; padding: 10px 18px; margin-bottom: 12px; }
+.au-badge i { width: 10px; height: 10px; background: var(--au-green); border-radius: 50%; animation: au-pulse 2s infinite; }
+.au-badge span { font-size: 13px; color: rgba(255,255,255,.8); font-weight: 500; }
+@keyframes au-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.3); } }
+.au-features { list-style: none; z-index: 1; margin: 0; padding: 0; }
+.au-features li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: rgba(255,255,255,.6); padding: 6px 0; }
+.au-features li::before { content: '✓'; width: 20px; height: 20px; background: rgba(0,196,140,.2); color: var(--au-green); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
+.au-panel-right { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 24px; }
+.au-card { background: #fff; border-radius: 20px; box-shadow: 0 4px 24px rgba(11,31,58,.10); padding: 44px 48px; width: 100%; max-width: 460px; }
+.au-tabs { display: flex; background: var(--au-mist); border-radius: 10px; padding: 4px; margin-bottom: 24px; }
+.au-tab { flex: 1; padding: 10px; border: none; background: transparent; border-radius: 8px; font-size: 14px; font-weight: 500; font-family: inherit; color: var(--au-slate); cursor: pointer; transition: all .2s; }
+.au-tab.active { background: #fff; color: var(--au-navy); box-shadow: 0 1px 6px rgba(11,31,58,.10); }
+.au-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+.au-sub { font-size: 13px; color: var(--au-slate); margin-bottom: 22px; line-height: 1.5; }
+.au-role-label { font-size: 12px; font-weight: 600; color: var(--au-slate); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.au-role { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+.au-role-btn { padding: 12px; border: 1.5px solid var(--au-border); border-radius: var(--au-radius); background: #fff; cursor: pointer; text-align: center; transition: all .2s; font-family: inherit; }
+.au-role-btn .ico { font-size: 22px; display: block; margin-bottom: 4px; }
+.au-role-btn .lbl { font-size: 13px; font-weight: 500; color: var(--au-slate); }
+.au-role-btn.selected { border-color: var(--au-blue-lt); background: rgba(45,106,224,.05); }
+.au-role-btn.selected .lbl { color: var(--au-blue); }
+.au-field { margin-bottom: 18px; }
+.au-field label { display: block; font-size: 13px; font-weight: 500; color: var(--au-navy); margin-bottom: 6px; }
+.au-field input { width: 100%; padding: 11px 14px; border: 1.5px solid var(--au-border); border-radius: var(--au-radius); font-size: 14px; color: var(--au-navy); background: #fff; outline: none; font-family: inherit; transition: border-color .2s, box-shadow .2s; }
+.au-field input:focus { border-color: var(--au-blue-lt); box-shadow: 0 0 0 3px rgba(45,106,224,.12); }
+.au-pw { position: relative; }
+.au-pw input { padding-right: 44px; }
+.au-pw button { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 16px; padding: 4px; }
+.au-btn { width: 100%; padding: 13px; background: var(--au-blue); color: #fff; border: none; border-radius: var(--au-radius); font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 4px; transition: background .2s, transform .1s; }
+.au-btn:hover { background: var(--au-blue-lt); }
+.au-btn:active { transform: scale(.98); }
+.au-btn:disabled { background: var(--au-border); color: var(--au-slate); cursor: not-allowed; }
+.au-alert { padding: 12px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; margin-bottom: 18px; line-height: 1.5; background: rgba(224,62,62,.08); color: #B91C1C; border: 1px solid rgba(224,62,62,.2); }
+.au-alert.tight { margin: -10px 0 18px; }
+.au-foot { text-align: center; margin-top: 18px; font-size: 13px; color: var(--au-slate); }
+.au-foot button { background: none; border: none; color: var(--au-blue); font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; padding: 0; }
+.au-form { display: flex; flex-direction: column; }
+/* the shared CSV picker keeps its markup; just give it the template look */
+.au-card .data-files { margin-bottom: 18px !important; }
+.au-card .data-files legend { font-size: 13px; font-weight: 500; color: var(--au-navy); }
+.au-card .data-files label { font-size: 13px; color: var(--au-slate); }
+.au-card .data-files input[type=file] { display: block; width: 100%; margin-top: 6px; font-size: 13px; }
+.au-card .data-files .back-button { align-self: flex-start; background: transparent; color: var(--au-blue); border: 1.5px solid var(--au-border); border-radius: var(--au-radius); padding: 9px 14px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.au-card .data-files .back-button:hover { border-color: var(--au-blue-lt); }
+@media (max-width: 768px) {
+  .au-panel-left { display: none; }
+  .au-panel-right { padding: 24px 16px; }
+  .au-card { padding: 32px 24px; }
+}

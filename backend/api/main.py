@@ -7,6 +7,7 @@ import os
 import json
 import logging
 import hashlib
+import re
 import csv
 import io
 from datetime import datetime
@@ -16,7 +17,7 @@ from typing import Optional
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -24,20 +25,23 @@ from pydantic import BaseModel
 from common.schemas import (
     ScoreResult, ExplainResult, Recommendation, Product, UserFeatures,
     SimulationRequest, SimulationResult, CandidateSummary, Factor,
-    Demographic, ExplainResult, PreapproveRequest,
+    Demographic, ExplainResult, ApplicationRequest,
 )
 from backend.scoring_engine.engine import compute_score, simulate_change
 from backend.explainability.explainer import explain_breakdown
+from backend.explainability.xai import build_xai
 from backend.recommendations.recommender import recommend_products
 from backend.ml_engine.predictor import predict_score, explain_ml
 from backend.ml_engine.target_achievement import find_min_change
 from data.feature_engineering import (
     get_all_user_features, load_products, load_demographics, normalize_transactions, features_from_upload,
 )
-from backend.integrations import bank_client
 from backend.lender.router import build_lender_router, candidate_ref
-from backend.lender.store import OfferStore
+from backend.lender import accounts as lender_accounts
+from backend.lender.store import ApplicationStore, OfferStore
 from backend.reports.transparency_report import build_transparency_report
+from backend import auth
+from database import db as database
 
 
 # ---------- Logging ----------
@@ -119,6 +123,15 @@ def startup():
     for uid, features in _user_features.items():
         result = compute_score(features)
         _scores[uid] = result
+
+    database.init_db()
+    for uid, feats, demo in database.load_all_user_data():   # registered users / users who uploaded newer data
+        _install_user_data(uid, UserFeatures(**feats), demo)
+    database.sync_reference_data(_demographics, _products, _scores)
+    lender_accounts.ensure_demo_lender()
+    created = auth.seed_accounts(_user_features.keys())
+    if created:
+        logger.info(f"Created {created} user accounts (default password from SEED_USER_PASSWORD)")
 
     logger.info(f"Ready — {len(_user_features)} users loaded, {len(_products)} products available")
 
@@ -664,23 +677,182 @@ def list_products():
 # ---------- Lender portal (separate, authenticated router) ----------
 
 offer_store = OfferStore()
+application_store = ApplicationStore()
 app.include_router(build_lender_router(
     get_demographics=lambda: _demographics,
     get_scores=lambda: _scores,
     get_products=lambda: _products,
     get_analysis=lambda uid: _score_bundle(_user_features[uid], uid, 0, []) if uid in _user_features else None,
     store=offer_store,
+    applications=application_store,
 ))
 
 
-# ---------- Consumer side of lender offers ----------
-# NOTE (MVP): there is no consumer login; the user_id in the path identifies the consumer.
+# ---------- Registration and data updates (users submit their own data) ----------
+
+USER_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{3,40}$")
+
+
+def _install_user_data(user_id: str, features: UserFeatures, demo: dict) -> ScoreResult:
+    """Put a user's data into the in-memory caches (features, score, demographics record); returns the score."""
+    global _demographics
+    _user_features[user_id] = features
+    _scores[user_id] = compute_score(features)
+    record = {**{k: v for k, v in demo.items() if v is not None}, "user_id": user_id}
+    if "city_tier" in record:
+        record["city_tier"] = _normalize_city_tier(record["city_tier"])
+    _demographics = [d for d in _demographics if d["user_id"] != user_id] + [record]
+    return _scores[user_id]
+
+
+async def _read_text(upload: UploadFile) -> str:
+    raw = await upload.read()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
+async def _features_from_submission(user_id: str, features_csv: Optional[UploadFile],
+                                    transactions: Optional[UploadFile], demographics: Optional[UploadFile]):
+    """Either a one-row features CSV, or transactions + demographics. Returns (features, demographics_dict)."""
+    if features_csv is not None and features_csv.filename:
+        rows = list(csv.DictReader(io.StringIO(await _read_text(features_csv))))
+        if not rows:
+            raise HTTPException(status_code=400, detail="The CSV has no data rows.")
+        mine = next((r for r in rows if str(r.get("user_id", "")).strip() == user_id), rows[0])
+        try:
+            features, _ = _parse_csv_row_to_features(mine, user_id)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not read the CSV: {e}")
+        return features, {}
+    if transactions is not None and transactions.filename and demographics is not None and demographics.filename:
+        try:
+            demo_data = json.loads(await _read_text(demographics))
+            if isinstance(demo_data, dict) and "user_id" not in demo_data:
+                demo_data = demo_data.get("users") or demo_data.get("demographics") or []
+            demos = [demo_data] if isinstance(demo_data, dict) else demo_data
+            demo = next((d for d in demos if str(d.get("user_id", "")) == user_id), demos[0])
+        except (ValueError, IndexError, AttributeError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid demographics JSON: {e}")
+        tx_text = await _read_text(transactions)
+        try:
+            if transactions.filename.lower().endswith(".json"):
+                parsed = json.loads(tx_text)
+                tx_rows = parsed["transactions"] if isinstance(parsed, dict) else parsed
+            else:
+                tx_rows = list(csv.DictReader(io.StringIO(tx_text)))
+            tx_all = normalize_transactions(tx_rows)
+        except (ValueError, KeyError, TypeError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid transactions file: {e}")
+        mine = [t for t in tx_all if str(t.get("user_id", "")) == user_id]
+        if not mine and len({str(t.get("user_id", "")) for t in tx_all}) == 1:
+            mine = tx_all   # a single-person statement, whatever ID it carries
+        demo = {**demo, "user_id": user_id}
+        try:
+            features, _ = features_from_upload(demo, mine)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not score the uploaded data: {e}")
+        return features, demo
+    raise HTTPException(status_code=400,
+                        detail="Upload either a features CSV, or both a transactions file and a demographics JSON.")
+
+
+@app.get("/auth/check-id")
+def check_user_id(user_id: str = Query(...)):
+    """Lets the registration form flag a taken/invalid ID before any files are uploaded."""
+    user_id = user_id.strip()
+    if not USER_ID_RE.match(user_id):
+        return {"available": False, "reason": "Use 3-40 characters: letters, digits, _ . -"}
+    if user_id in _user_features or auth.is_taken(user_id):
+        return {"available": False, "reason": "That user ID is already taken. Please choose a different one."}
+    return {"available": True, "reason": None}
+
+
+@app.post("/auth/register")
+async def register(user_id: str = Form(...), password: str = Form(...),
+                   features_csv: Optional[UploadFile] = File(None),
+                   transactions: Optional[UploadFile] = File(None),
+                   demographics: Optional[UploadFile] = File(None)):
+    user_id = user_id.strip()
+    if not USER_ID_RE.match(user_id):
+        raise HTTPException(status_code=422, detail="User ID must be 3-40 characters: letters, digits, _ . -")
+    if len(password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+    if user_id in _user_features or auth.is_taken(user_id):
+        raise HTTPException(status_code=409, detail="That user ID is already taken. Please choose a different one.")
+    features, demo = await _features_from_submission(user_id, features_csv, transactions, demographics)
+    if not auth.create_account(user_id, password):
+        raise HTTPException(status_code=409, detail="That user ID is already taken")
+    score = _install_user_data(user_id, features, demo)
+    database.save_user_data(user_id, features.model_dump(), demo, score)
+    return {"token": auth.issue_token(user_id), "token_type": "bearer",
+            "expires_in": auth.SESSION_TTL_SECONDS, "user_id": user_id}
+
+
+@app.post("/me/data")
+async def update_my_data(features_csv: Optional[UploadFile] = File(None),
+                         transactions: Optional[UploadFile] = File(None),
+                         demographics: Optional[UploadFile] = File(None),
+                         user_id: str = Depends(auth.require_user)):
+    """Replace the logged-in user's data with newer uploads and re-score. Returns the fresh dashboard bundle."""
+    previous = _scores.get(user_id)
+    features, demo = await _features_from_submission(user_id, features_csv, transactions, demographics)
+    if not demo:   # a features-only CSV carries no profile; keep what we already know
+        demo = next((d for d in _demographics if d["user_id"] == user_id), {})
+    score = _install_user_data(user_id, features, demo)
+    database.save_user_data(user_id, features.model_dump(), demo, score)
+    return {**_score_bundle(features, user_id, 0, []), "previous_score": previous.total_score if previous else None}
+
+
+# ---------- Consumer login ----------
+
+class LoginRequest(BaseModel):
+    user_id: str
+    password: str
+
+
+@app.post("/auth/login")
+def user_login(body: LoginRequest):
+    token = auth.login(body.user_id, body.password)
+    if token is None:
+        raise HTTPException(status_code=401, detail="Invalid user ID or password")
+    uid = body.user_id.strip()
+    return {"token": token, "token_type": "bearer", "expires_in": auth.SESSION_TTL_SECONDS, "user_id": uid}
+
+
+@app.post("/auth/logout")
+def user_logout(authorization: Optional[str] = Header(default=None)):
+    auth.logout(auth.bearer_token(authorization))
+    return {"status": "logged_out"}
+
+
+@app.get("/auth/me")
+def whoami(user_id: str = Depends(auth.require_user)):
+    return {"user_id": user_id}
+
+
+@app.get("/me/dashboard")
+def my_dashboard(user_id: str = Depends(auth.require_user)):
+    """The logged-in user's own score analysis (same shape as an /upload-csv result row)."""
+    if user_id not in _user_features:
+        raise HTTPException(status_code=404, detail=f"No score data for {user_id}")
+    return _score_bundle(_user_features[user_id], user_id, 0, [])
+
+
+# ---------- Consumer side of lender offers (login required; you can only see/answer your own) ----------
+
+def _require_self(user_id: str, current: str) -> None:
+    if user_id != current:
+        raise HTTPException(status_code=403, detail="You can only access your own offers")
+
 
 @app.get("/users/{user_id}/offers")
-def get_user_offers(user_id: str):
-    if user_id not in _user_features:
-        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
-    return [{k: v for k, v in o.items() if k not in ("user_id", "candidate_ref")}
+def get_user_offers(user_id: str, current: str = Depends(auth.require_user)):
+    _require_self(user_id, current)
+    banks = lender_accounts.bank_names()
+    return [{**{k: v for k, v in o.items() if k not in ("user_id", "candidate_ref", "lender")},
+             "bank_name": banks.get(o["lender"], o["lender"])}
             for o in offer_store.for_user(user_id)]
 
 
@@ -689,7 +861,8 @@ class OfferResponse(BaseModel):
 
 
 @app.post("/users/{user_id}/offers/{offer_id}/respond")
-def respond_to_offer(user_id: str, offer_id: int, body: OfferResponse):
+def respond_to_offer(user_id: str, offer_id: int, body: OfferResponse, current: str = Depends(auth.require_user)):
+    _require_self(user_id, current)
     if body.action not in ("accept", "reject"):
         raise HTTPException(status_code=422, detail="action must be 'accept' or 'reject'")
     offer = offer_store.respond(offer_id, user_id, accept=body.action == "accept")
@@ -700,46 +873,70 @@ def respond_to_offer(user_id: str, offer_id: int, body: OfferResponse):
     return {"offer_id": offer_id, "status": offer["status"]}
 
 
-# ---------- Bank pre-approval (calls the separate bank-partner-api) ----------
+# ---------- Pre-approval: apply to a specific registered lender ----------
 
-def _resolve_features(user_id: Optional[str], features: Optional[dict]) -> UserFeatures:
-    if features:
-        try:
-            return UserFeatures(**features)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid features: {e}")
-    if user_id and user_id in _user_features:
-        return _user_features[user_id]
-    raise HTTPException(status_code=404, detail="Provide `features` (from your score result) or a known `user_id`.")
+@app.get("/lenders")
+def list_lenders():
+    """Registered banks/lenders a borrower can apply to."""
+    return lender_accounts.list_lenders()
 
 
-@app.post("/offers/preapprove")
-def preapprove_offer(request: PreapproveRequest):
-    product = next((p for p in _products if p.product_id == request.product_id), None)
+def _public_application(a: dict, banks: dict) -> dict:
+    return {**{k: v for k, v in a.items() if k not in ("user_id", "lender")},
+            "lender_id": a["lender"], "bank_name": banks.get(a["lender"], a["lender"])}
+
+
+@app.get("/users/{user_id}/applications")
+def get_user_applications(user_id: str, current: str = Depends(auth.require_user)):
+    _require_self(user_id, current)
+    banks = lender_accounts.bank_names()
+    return [_public_application(a, banks) for a in application_store.for_user(user_id)]
+
+
+@app.post("/users/{user_id}/applications", status_code=201)
+def apply_to_lender(user_id: str, body: ApplicationRequest, current: str = Depends(auth.require_user)):
+    _require_self(user_id, current)
+    product = next((p for p in _products if p.product_id == body.product_id), None)
     if product is None:
-        raise HTTPException(status_code=404, detail=f"Unknown product {request.product_id}")
-    features = _resolve_features(request.user_id, request.features)
-    score = compute_score(features)   # always recomputed server-side; never trust a client-supplied score
-    try:
-        return bank_client.preapprove({
-            "applicant_ref": candidate_ref(features.user_id),   # opaque; no PII leaves this service
-            "score": score.total_score,
-            "risk_category": score.risk_category,
-            "product_id": product.product_id,
-            "product_name": product.name,
-            "min_score_required": product.min_score_required,
-            "interest_rate": product.interest_rate,
-        })
-    except bank_client.BankApiError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        raise HTTPException(status_code=404, detail=f"Unknown product {body.product_id}")
+    banks = lender_accounts.bank_names()
+    if body.lender_id not in banks:
+        raise HTTPException(status_code=404, detail="Unknown lender")
+    if body.requested_amount <= 0 or body.tenure_months <= 0:
+        raise HTTPException(status_code=422, detail="Amount and tenure must be positive")
+    if not body.full_name.strip() or not body.phone.strip():
+        raise HTTPException(status_code=422, detail="Name and phone are required")
+    score = _scores.get(user_id)   # always the server's score, never a client-supplied one
+    if score is None:
+        raise HTTPException(status_code=404, detail="No score on file yet")
+    if score.total_score < product.min_score_required:
+        raise HTTPException(status_code=422, detail=f"Your score is below this product's minimum of {product.min_score_required}")
+    row = application_store.create(
+        user_id=user_id, lender=body.lender_id, product_id=product.product_id, product_name=product.name,
+        interest_rate=product.interest_rate, requested_amount=body.requested_amount,
+        tenure_months=body.tenure_months, purpose=body.purpose.strip(), applicant_name=body.full_name.strip(),
+        phone=body.phone.strip(), score_at_submit=score.total_score)
+    if row is None:
+        raise HTTPException(status_code=409, detail="You already have an active application for this product with that lender")
+    return _public_application(row, banks)
 
 
-@app.get("/offers/preapprove/{application_id}")
-def preapproval_status(application_id: str):
+# ---------- Explainable-AI dashboard ----------
+
+class XaiRequest(BaseModel):
+    features: UserFeatures
+
+
+@app.post("/xai")
+def explain_dashboard(request: XaiRequest):
+    """Everything the "Why this score" tab needs; recomputed server-side from the applicant's features."""
+    ml_score = None
     try:
-        return bank_client.offer_status(application_id)
-    except bank_client.BankApiError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        ml_score = predict_score(request.features).model_dump()
+        ml_score["drivers"] = explain_ml(request.features, top_n=8)
+    except Exception as e:
+        logger.warning(f"ML scoring failed for XAI view of {request.features.user_id}: {e}")
+    return build_xai(request.features, ml_score)
 
 
 # ---------- PDF Transparency Report ----------

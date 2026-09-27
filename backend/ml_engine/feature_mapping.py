@@ -81,3 +81,10 @@ def user_features_to_model_row(f: UserFeatures) -> dict:
     row["housing_status"] = f.housing_status
     row["education_level"] = f.education_level
     return {name: row[name] for name in MODEL_FEATURES}
+
+
+def score_head_matrix(preprocessed, pd_prob):
+    """Input for the score head: the preprocessed features plus the PD-based score (1000 x (1 - PD))."""
+    import numpy as np
+    x = preprocessed.toarray() if hasattr(preprocessed, "toarray") else np.asarray(preprocessed)
+    return np.column_stack([x, 1000 * (1 - np.asarray(pd_prob))])

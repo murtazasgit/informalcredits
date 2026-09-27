@@ -32,3 +32,6 @@ Thumbs.db
 
 # Generated reports (don't commit user PDFs)
 backend/reports/generated/*.pdf
+
+# Office lock files
+~$*

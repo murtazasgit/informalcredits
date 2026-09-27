@@ -62,9 +62,8 @@ export default function ActionPlan({ features, recommendations, apiBase }) {
         <>
           <p className="target-achievement-message">{plan.message}</p>
           <div className="action-cards">
-            {steps.map((step, i) => (
+            {steps.map(step => (
               <div key={step.feature_field} className="action-card">
-                <div className="action-card-num">Step {i + 1}</div>
                 <div className="action-card-title">{step.label}</div>
                 <div className="action-card-change">{step.current_value} → {step.target_value}</div>
                 <div className="action-card-gain">+{step.expected_point_gain} pts</div>

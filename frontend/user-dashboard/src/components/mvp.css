@@ -284,7 +284,7 @@
 
 .detail-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.5fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   margin-top: 20px;
 }
@@ -621,3 +621,39 @@
 .lender-link { padding: 0; border: 0; background: none; color: var(--color-brand-dark); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; }
 .lender-profile { margin-top: 6px; color: var(--color-text-secondary); font-size: 13px; text-transform: capitalize; }
 .lender-contact { max-width: 300px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+
+/* ---- explainable-AI dashboard ---- */
+.xai { display: flex; flex-direction: column; gap: 16px; }
+.xai-headline { font-size: 20px; line-height: 1.45; font-weight: 600; padding: 20px 24px; background: #fff; border: 1px solid var(--color-border); border-left: 5px solid var(--color-brand); border-radius: var(--radius-sm); }
+.xai-card-box h2 { margin-bottom: 4px; }
+.xai-sub { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 12px; }
+.xai-h3 { font-size: 14px; margin: 16px 0 8px; color: var(--color-text-secondary); }
+.xai-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.xai-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; font-size: 14px; line-height: 1.4; }
+.xai-item.good { background: var(--color-excellent-bg); }
+.xai-item.bad { background: var(--color-fair-bg); }
+.xai-icon { flex: none; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; color: #fff; }
+.xai-item.good .xai-icon { background: var(--color-excellent); }
+.xai-item.bad .xai-icon { background: var(--color-fair); }
+.xai-copy { flex: 1; display: flex; flex-direction: column; }
+.xai-copy strong { font-size: 13px; }
+.xai-badge { flex: none; font-weight: 700; font-size: 13px; padding: 3px 10px; border-radius: 999px; background: #fff; }
+.xai-item.good .xai-badge { color: var(--color-excellent); }
+.xai-item.bad .xai-badge { color: var(--color-poor); }
+.xai-empty { font-size: 14px; color: var(--color-text-secondary); padding: 6px 2px; }
+.xai-opinion { font-size: 14px; line-height: 1.6; margin-bottom: 12px; }
+.xai-fair { font-size: 13px; color: var(--color-text-secondary); text-align: center; padding: 4px 12px; }
+
+/* ---- navbar: nav buttons, user chip, logout ---- */
+.nav-links { display: flex; gap: 6px; flex: 1; margin: 0 24px; flex-wrap: wrap; }
+.nav-btn { padding: 8px 16px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--color-text-secondary); font: 600 14px inherit; font-family: inherit; cursor: pointer; transition: background .15s, color .15s; }
+.nav-btn:hover { background: var(--color-brand-light); color: var(--color-brand-dark); }
+.nav-btn.active { background: var(--color-brand); color: #fff; box-shadow: 0 2px 8px rgba(44,94,232,.3); }
+.user-chip { display: flex; align-items: center; gap: 10px; padding: 5px 14px 5px 5px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface-alt); }
+.user-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #2c5ee8, #0d9f6e); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+.user-meta { display: flex; flex-direction: column; line-height: 1.15; }
+.user-meta strong { font-size: 13px; color: var(--color-text-primary); }
+.user-meta small { font-size: 11px; color: var(--color-text-muted); }
+.logout-btn { padding: 8px 16px; border-radius: 999px; border: 1.5px solid var(--color-poor); background: #fff; color: var(--color-poor); font: 600 14px inherit; font-family: inherit; cursor: pointer; transition: background .15s, color .15s; }
+.logout-btn:hover { background: var(--color-poor); color: #fff; }
+@media (max-width: 900px) { .user-meta small { display: none; } .nav-links { margin: 0 8px; } .nav-btn { padding: 6px 10px; font-size: 13px; } }

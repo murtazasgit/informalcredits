@@ -50,5 +50,11 @@
     "num__digital_bill_ontime_pct": -0.033,
     "num__delinq_60": -0.0241,
     "num__delinq_30": 0.0077
+  },
+  "score_head": {
+    "model": "GradientBoostingRegressor(huber)",
+    "target": "rule-based score",
+    "cv_mean_gap": 25.8,
+    "cv_within_50": 0.886
   }
 }

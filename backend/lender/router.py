@@ -1,7 +1,10 @@
 """
 Lender (business user) portal API — a separate, authenticated surface from the consumer API.
 
-  POST /lender/login                 -> bearer token (mock credentials from env, see below)
+  POST /lender/register              -> a bank/lender creates an account (bank name + username + password)
+  POST /lender/login                 -> bearer token
+  GET  /lender/applications          -> pre-approval applications consumers sent to THIS lender       [auth]
+  POST /lender/applications/{id}/decision -> approve / decline an application                      [auth]
   GET  /lender/candidates            -> filterable candidate list (user_id, score, band)   [auth]
   GET  /lender/candidates/{id}       -> full score analysis (same as the consumer dashboard);
                                         contact PII ONLY after acceptance                     [auth]
@@ -13,8 +16,8 @@ Personal contact details — name, address, phone — are withheld server-side: 
 list/detail responses until the candidate has accepted an offer from *this* lender. The detail view
 shows the same score analysis the consumer sees (breakdown, explanation, ML cross-check, products).
 
-Credentials (MVP mock; override via env): LENDER_USERNAME=lender, LENDER_PASSWORD=lender123,
-LENDER_REF_SECRET=dev-ref-secret.
+A demo lender (LENDER_USERNAME=lender, LENDER_PASSWORD=lender123, bank "Demo Bank") is seeded at startup.
+LENDER_REF_SECRET=dev-ref-secret keys the anonymous candidate references.
 """
 import hashlib
 import hmac
@@ -26,8 +29,10 @@ from typing import Callable, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from backend.lender.pii import get_pii
-from backend.lender.store import OfferStore
-from common.schemas import LenderLoginRequest, Product, PushOffersRequest, ScoreResult
+from backend.lender import accounts
+from backend.lender.store import ApplicationStore, OfferStore
+from common.schemas import (ApplicationDecision, LenderLoginRequest, LenderRegisterRequest, Product,
+                            PushOffersRequest, ScoreResult)
 
 TOKEN_TTL_SECONDS = 8 * 3600
 
@@ -43,6 +48,7 @@ def build_lender_router(
     get_products: Callable[[], list[Product]],
     get_analysis: Callable[[str], Optional[dict]],
     store: OfferStore,
+    applications: ApplicationStore,
 ) -> APIRouter:
     router = APIRouter(prefix="/lender", tags=["lender"])
     tokens: dict[str, tuple[str, float]] = {}   # token -> (username, expiry)
@@ -64,15 +70,31 @@ def build_lender_router(
             index[candidate_ref(d["user_id"])] = d
         return index
 
+    def _start_session(lender: dict) -> dict:
+        token = secrets.token_urlsafe(32)
+        tokens[token] = (lender["username"], time.time() + TOKEN_TTL_SECONDS)
+        return {"token": token, "token_type": "bearer", "expires_in": TOKEN_TTL_SECONDS,
+                "username": lender["username"], "bank_name": lender["bank_name"]}
+
+    @router.post("/register")
+    def register(body: LenderRegisterRequest):
+        if not body.bank_name.strip():
+            raise HTTPException(status_code=422, detail="Bank name is required")
+        if not accounts.USERNAME_RE.match(body.username.strip()):
+            raise HTTPException(status_code=422, detail="Username must be 3-40 characters: letters, digits, _ . -")
+        if len(body.password) < 8:
+            raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+        lender = accounts.register(body.bank_name, body.username, body.password)
+        if lender is None:
+            raise HTTPException(status_code=409, detail="That bank name or username is already registered")
+        return _start_session(lender)
+
     @router.post("/login")
     def login(body: LenderLoginRequest):
-        user_ok = hmac.compare_digest(body.username.strip().lower(), os.environ.get("LENDER_USERNAME", "lender").lower())
-        pass_ok = hmac.compare_digest(body.password, os.environ.get("LENDER_PASSWORD", "lender123"))
-        if not (user_ok and pass_ok):
+        lender = accounts.authenticate(body.username, body.password)
+        if lender is None:
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        token = secrets.token_urlsafe(32)
-        tokens[token] = (body.username, time.time() + TOKEN_TTL_SECONDS)
-        return {"token": token, "token_type": "bearer", "expires_in": TOKEN_TTL_SECONDS}
+        return _start_session(lender)
 
     def _latest_status(user_id: str, lender: str) -> Optional[str]:
         mine = [o for o in store.for_lender(lender) if o["user_id"] == user_id]
@@ -107,7 +129,7 @@ def build_lender_router(
                 "offer_status": _latest_status(uid, lender),
                 "pii_unlocked": store.has_accepted(uid, lender),
             })
-        out.sort(key=lambda c: -c["score"])
+        out.sort(key=lambda c: c["user_id"])   # ascending by user ID
         return out
 
     @router.get("/candidates/{ref}")
@@ -166,5 +188,29 @@ def build_lender_router(
     @router.get("/offers")
     def my_offers(lender: str = Depends(require_lender)):
         return [{k: v for k, v in o.items() if k != "lender"} for o in store.for_lender(lender)]
+
+    @router.get("/applications")
+    def my_applications(lender: str = Depends(require_lender)):
+        scores = get_scores()
+        out = []
+        for a in applications.for_lender(lender):
+            score = scores.get(a["user_id"])
+            # the applicant typed these contact details into this lender's form, so they are released to it
+            out.append({k: v for k, v in a.items() if k != "lender"} | {
+                "current_score": score.total_score if score else None,
+                "risk_category": score.risk_category if score else None,
+            })
+        return out
+
+    @router.post("/applications/{application_id}/decision")
+    def decide_application(application_id: int, body: ApplicationDecision, lender: str = Depends(require_lender)):
+        if body.decision not in ("approve", "decline"):
+            raise HTTPException(status_code=422, detail="decision must be 'approve' or 'decline'")
+        row = applications.decide(application_id, lender, body.decision == "approve", body.note.strip())
+        if row is None:
+            raise HTTPException(status_code=404, detail="Application not found")
+        if row.pop("_already_decided", False):
+            raise HTTPException(status_code=409, detail=f"Application already {row['status']}")
+        return {"application_id": application_id, "status": row["status"]}
 
     return router

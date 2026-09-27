@@ -4,7 +4,9 @@ predictor.py - Case 1 inference. Loads the saved model ONCE at import time.
     from backend.ml_engine.predictor import predict_score
     result = predict_score(user_features)   # -> ScoreResult(method="ml_pd")
 
-Score = 1000 x (1 - PD). Risk bands match backend/scoring_engine/README.md:
+Raw score = 1000 x (1 - PD); a score head (score_head.pkl) maps it onto the rule engine's scale so the ML and
+rule-based scores agree to within ~50 points for most users. probability_of_default is always the PD model's own.
+Risk bands match backend/scoring_engine/README.md:
 Poor <400, Fair 400-599, Good 600-799, Excellent 800+.
 `breakdown` is left at zeros: an ML score is not a sum of rule points
 (per-feature drivers are in saved_models/model_metadata.json -> "coefficients").
@@ -19,7 +21,7 @@ if str(ROOT) not in sys.path:
 import joblib
 import pandas as pd
 
-from backend.ml_engine.feature_mapping import MODEL_FEATURES, user_features_to_model_row
+from backend.ml_engine.feature_mapping import MODEL_FEATURES, score_head_matrix, user_features_to_model_row
 from common.schemas import ScoreBreakdown, ScoreResult, UserFeatures
 
 MODEL_DIR = Path(__file__).resolve().parent / "saved_models"
@@ -27,6 +29,7 @@ MODEL_DIR = Path(__file__).resolve().parent / "saved_models"
 try:
     _PREPROCESSOR = joblib.load(MODEL_DIR / "preprocessor.pkl")
     _MODEL = joblib.load(MODEL_DIR / "pd_model.pkl")
+    _HEAD = joblib.load(MODEL_DIR / "score_head.pkl") if (MODEL_DIR / "score_head.pkl").exists() else None
 except FileNotFoundError as exc:
     raise FileNotFoundError(
         f"PD model files not found in {MODEL_DIR}. "
@@ -45,8 +48,12 @@ def _risk_category(score: int) -> str:
 
 def predict_score(features: UserFeatures) -> ScoreResult:
     row = pd.DataFrame([user_features_to_model_row(features)], columns=MODEL_FEATURES)
-    pd_prob = float(_MODEL.predict_proba(_PREPROCESSOR.transform(row))[0, 1])
-    score = max(0, min(1000, round(1000 * (1 - pd_prob))))
+    x = _PREPROCESSOR.transform(row)
+    pd_prob = float(_MODEL.predict_proba(x)[0, 1])
+    score = 1000 * (1 - pd_prob)
+    if _HEAD is not None:
+        score = float(_HEAD.predict(score_head_matrix(x, [pd_prob]))[0])
+    score = max(0, min(1000, round(score)))
     return ScoreResult(
         user_id=features.user_id,
         total_score=score,

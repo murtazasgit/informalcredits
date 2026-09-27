@@ -56,17 +56,72 @@ class ProductRecord(Base):
 class Offer(Base):
     __tablename__ = "offers"
     offer_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String)
+    user_id = Column(String, index=True)
+    candidate_ref = Column(String)
+    lender = Column(String, index=True)
     product_id = Column(String)
+    product_name = Column(String)
+    interest_rate = Column(Float)
+    message = Column(Text, default="")
     status = Column(String, default="pushed")
     pushed_at = Column(String)
+    responded_at = Column(String, nullable=True)
+
+
+class Account(Base):
+    """Consumer login: the platform user_id plus a salted password hash."""
+    __tablename__ = "accounts"
+    user_id = Column(String, primary_key=True)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(String)
+
+
+class UserSession(Base):
+    """Bearer sessions; only a SHA-256 of the token is stored."""
+    __tablename__ = "sessions"
+    token_hash = Column(String, primary_key=True)
+    user_id = Column(String, index=True)
+    expires_at = Column(Float)
+
+
+class UserData(Base):
+    """Latest data a registered/updating user submitted (features JSON + optional demographics JSON)."""
+    __tablename__ = "user_data"
+    user_id = Column(String, primary_key=True)
+    features_json = Column(Text, nullable=False)
+    demographics_json = Column(Text)
+    updated_at = Column(String)
 
 
 class Lender(Base):
+    """A registered lending institution. `username` is the identity stamped on its offers and applications."""
     __tablename__ = "lenders"
     lender_id = Column(String, primary_key=True)
     username = Column(String, unique=True)
     password_hash = Column(String)
+    bank_name = Column(String)
+    created_at = Column(String)
+
+
+class Application(Base):
+    """A consumer's pre-approval application to one specific lender for one product."""
+    __tablename__ = "applications"
+    application_id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True)
+    lender = Column(String, index=True)          # Lender.username
+    product_id = Column(String)
+    product_name = Column(String)
+    interest_rate = Column(Float)
+    requested_amount = Column(Float)
+    tenure_months = Column(Integer)
+    purpose = Column(String)
+    applicant_name = Column(String)
+    phone = Column(String)
+    score_at_submit = Column(Integer)
+    status = Column(String, default="submitted")  # submitted | approved | declined
+    lender_note = Column(Text, default="")
+    created_at = Column(String)
+    decided_at = Column(String, nullable=True)
 
 
 def get_engine(db_path: str = None):

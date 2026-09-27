@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import LenderPortal from './lender/LenderPortal.jsx'
 import './index.css'
+import './theme.css'
 
 // Two separate modes behind one bundle: consumer app at "#/", lender portal at "#/lender".
 function Root() {

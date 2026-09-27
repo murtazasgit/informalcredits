@@ -25,7 +25,7 @@ def test_endpoints_are_gated(client):
 
 def test_candidate_search_filters(client, lender_headers):
     everyone = client.get("/lender/candidates", headers=lender_headers).json()
-    assert everyone and everyone == sorted(everyone, key=lambda c: -c["score"])
+    assert everyone and everyone == sorted(everyone, key=lambda c: c["user_id"])
     high = client.get("/lender/candidates?min_score=650", headers=lender_headers).json()
     assert high and all(c["score"] >= 650 for c in high) and len(high) < len(everyone)
     band = client.get("/lender/candidates?min_score=400&max_score=500", headers=lender_headers).json()
@@ -84,7 +84,7 @@ def _cheapest_eligible_product(client, score):
     return next(p for p in client.get("/products").json() if p["min_score_required"] <= score)
 
 
-def test_push_offer_consumer_sees_it_and_accept_unlocks_pii(client, lender_headers):
+def test_push_offer_consumer_sees_it_and_accept_unlocks_pii(client, lender_headers, user_auth):
     cand, uid = _pick(client, lender_headers)
     product = _cheapest_eligible_product(client, cand["score"])
 
@@ -96,7 +96,7 @@ def test_push_offer_consumer_sees_it_and_accept_unlocks_pii(client, lender_heade
     offer_id = result["offer_id"]
 
     # the consumer's side shows the offer (and does not leak lender-internal keys)
-    offers = client.get(f"/users/{uid}/offers").json()
+    offers = client.get(f"/users/{uid}/offers", headers=user_auth(uid)).json()
     assert len(offers) == 1 and offers[0]["offer_id"] == offer_id
     assert offers[0]["status"] == "pushed" and offers[0]["product_id"] == product["product_id"]
     assert offers[0]["message"] == "Welcome!" and "user_id" not in offers[0]
@@ -111,7 +111,7 @@ def test_push_offer_consumer_sees_it_and_accept_unlocks_pii(client, lender_heade
     assert again["results"][0]["status"] == "duplicate"
 
     # consumer accepts -> PII released, only now
-    r = client.post(f"/users/{uid}/offers/{offer_id}/respond", json={"action": "accept"})
+    r = client.post(f"/users/{uid}/offers/{offer_id}/respond", json={"action": "accept"}, headers=user_auth(uid))
     assert r.status_code == 200 and r.json()["status"] == "accepted"
     detail = client.get(f"/lender/candidates/{cand['candidate_ref']}", headers=lender_headers).json()
     assert detail["pii_unlocked"] is True and detail["contact"] == get_pii(uid)
@@ -120,15 +120,15 @@ def test_push_offer_consumer_sees_it_and_accept_unlocks_pii(client, lender_heade
     assert listed["pii_unlocked"] is True and "contact" not in listed   # list view never carries PII
 
     # cannot answer twice
-    assert client.post(f"/users/{uid}/offers/{offer_id}/respond", json={"action": "reject"}).status_code == 409
+    assert client.post(f"/users/{uid}/offers/{offer_id}/respond", json={"action": "reject"}, headers=user_auth(uid)).status_code == 409
 
 
-def test_rejected_offer_keeps_pii_hidden(client, lender_headers):
+def test_rejected_offer_keeps_pii_hidden(client, lender_headers, user_auth):
     cand, uid = _pick(client, lender_headers)
     product = _cheapest_eligible_product(client, cand["score"])
     oid = client.post("/lender/offers", headers=lender_headers, json={
         "candidate_refs": [cand["candidate_ref"]], "product_id": product["product_id"]}).json()["results"][0]["offer_id"]
-    client.post(f"/users/{uid}/offers/{oid}/respond", json={"action": "reject"})
+    client.post(f"/users/{uid}/offers/{oid}/respond", json={"action": "reject"}, headers=user_auth(uid))
     detail = client.get(f"/lender/candidates/{cand['candidate_ref']}", headers=lender_headers).json()
     assert detail["pii_unlocked"] is False and "contact" not in detail and detail["offer_status"] == "rejected"
 
@@ -152,15 +152,16 @@ def test_push_validation(client, lender_headers):
         assert res["results"][0]["status"] == "ineligible"
 
 
-def test_consumer_cannot_answer_someone_elses_offer(client, lender_headers):
+def test_consumer_cannot_answer_someone_elses_offer(client, lender_headers, user_auth):
     cand, uid = _pick(client, lender_headers)
     product = _cheapest_eligible_product(client, cand["score"])
     oid = client.post("/lender/offers", headers=lender_headers, json={
         "candidate_refs": [cand["candidate_ref"]], "product_id": product["product_id"]}).json()["results"][0]["offer_id"]
     other = next(u["user_id"] for u in client.get("/users").json() if u["user_id"] != uid)
-    assert client.post(f"/users/{other}/offers/{oid}/respond", json={"action": "accept"}).status_code == 404
-    assert client.post(f"/users/{uid}/offers/{oid}/respond", json={"action": "bogus"}).status_code == 422
-    assert client.get("/users/NOPE/offers").status_code == 404
+    assert client.post(f"/users/{other}/offers/{oid}/respond", json={"action": "accept"}, headers=user_auth(other)).status_code == 404
+    assert client.post(f"/users/{uid}/offers/{oid}/respond", json={"action": "bogus"}, headers=user_auth(uid)).status_code == 422
+    assert client.get(f"/users/{other}/offers", headers=user_auth(uid)).status_code == 403   # not yours to read
+    assert client.get(f"/users/{uid}/offers").status_code == 401                              # login required
 
 
 def test_lender_offers_listing_shows_user_id(client, lender_headers):
@@ -175,3 +176,23 @@ def test_lender_offers_listing_shows_user_id(client, lender_headers):
 def test_username_is_case_and_whitespace_insensitive_password_is_exact(client):
     assert client.post("/lender/login", json={"username": " Lender ", "password": "lender123"}).status_code == 200
     assert client.post("/lender/login", json={"username": "lender", "password": "LENDER123"}).status_code == 401
+
+
+def test_user_login_and_offer_persistence(client, lender_headers, user_auth):
+    cand, uid = _pick(client, lender_headers)
+    product = _cheapest_eligible_product(client, cand["score"])
+    assert client.post("/auth/login", json={"user_id": uid, "password": "wrong"}).status_code == 401
+    assert client.post("/auth/login", json={"user_id": "NOPE", "password": "altcredit123"}).status_code == 401
+    headers = user_auth(uid)
+    assert client.get("/auth/me", headers=headers).json() == {"user_id": uid}
+    assert client.get("/me/dashboard", headers=headers).json()["user_id"] == uid
+
+    client.post("/lender/offers", headers=lender_headers, json={
+        "candidate_refs": [cand["candidate_ref"]], "product_id": product["product_id"], "message": "Hi"})
+    # a brand-new store object (as after a restart) still sees the offer: it lives in the database
+    from backend.lender.store import OfferStore
+    assert len(OfferStore().for_user(uid)) == 1
+    assert len(client.get(f"/users/{uid}/offers", headers=headers).json()) == 1
+
+    assert client.post("/auth/logout", headers=headers).status_code == 200
+    assert client.get("/auth/me", headers=headers).status_code == 401

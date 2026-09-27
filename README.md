@@ -55,9 +55,7 @@ CSV / JSON  ->  data/ (ingest + feature engineering)  ->  UserFeatures
 | `backend/testing/` | pytest suite |
 | `database/` | SQLAlchemy models and DB setup (SQLite) |
 | `frontend/user-dashboard/` | React + Vite app (borrower dashboard and lender portal) |
-| `docs/` | Architecture write-up and diagrams |
 
-Full data flow with payloads: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Tech stack
 
